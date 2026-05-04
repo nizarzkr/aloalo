@@ -43,28 +43,65 @@ export async function POST(req: NextRequest) {
   const call = payload.call as Record<string, unknown>
   const organizationId = payload.organization_id as string
 
-  // 6. Insérer en base avec le client admin (bypass RLS)
+  // 6. Détecter le mode simulation
+  //    Le simulate-call injecte _sim_transcript dans l'objet call du payload
+  const simTranscriptRaw = call._sim_transcript as {
+    text: string
+    segments: Array<{ speaker: string; text: string; start: number; end: number }>
+    mock_id?: string
+    title?: string
+  } | null
+
+  const simTranscript = simTranscriptRaw
+    ? {
+        text: simTranscriptRaw.text,
+        segments: simTranscriptRaw.segments,
+        duration_seconds: call.duration as number,
+        title: simTranscriptRaw.title,
+      }
+    : null
+
+  // 7. Insérer en base avec le client admin (bypass RLS)
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SECRET_KEY!
   )
 
-  const { error } = await supabase.from('calls').insert({
-  organization_id: organizationId,
-  provider: 'ringover',
-  provider_call_id: call.id as string,
-  callee_number: call.to_number as string,
-  duration_seconds: call.duration as number,
-  audio_url: (call.recording_url as string) ?? null,
-  status: 'pending',
-  started_at: call.started_at as string,
+  const { data: insertedCall, error } = await supabase
+    .from('calls')
+    .insert({
+      organization_id: organizationId,
+      provider: simTranscript ? 'simulated' : 'ringover',
+      provider_call_id: call.id as string,
+      callee_number: call.to_number as string,
+      duration_seconds: call.duration as number,
+      audio_url: (call.recording_url as string) ?? null,
+      status: 'pending',
+      started_at: call.started_at as string,
     })
+    .select('id')
+    .single()
 
-  if (error) {
+  if (error || !insertedCall) {
     console.error('[webhook/ringover] Erreur insertion:', error)
     return NextResponse.json({ error: 'DB error' }, { status: 500 })
   }
 
-  console.log('[webhook/ringover] Appel inséré ✅', call.id)
+  console.log('[webhook/ringover] Appel inséré ✅', call.id, '→ DB id:', insertedCall.id)
+
+  // 8. Déclencher la transcription en fire-and-forget
+  //    On ne bloque pas la réponse Ringover sur le résultat de la transcription
+  const transcribeUrl = new URL('/api/transcribe', req.url).toString()
+  fetch(transcribeUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      callId: insertedCall.id,
+      ...(simTranscript ? { simTranscript } : {}),
+    }),
+  }).catch((err) => {
+    console.error('[webhook/ringover] Erreur déclenchement transcription:', err)
+  })
+
   return NextResponse.json({ received: true })
 }
