@@ -109,6 +109,17 @@ export async function POST(req: NextRequest) {
     })
 
     console.log('[transcribe] ✅ Simulation transcription OK, call:', callId)
+
+    // Fire-and-forget vers /api/analyze (même pattern que le webhook AssemblyAI)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    fetch(`${appUrl}/api/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callId }),
+    }).catch((err) => {
+      console.error('[transcribe] Erreur fire-and-forget /api/analyze:', err)
+    })
+
     return NextResponse.json({ success: true, mode: 'simulation' })
   }
 

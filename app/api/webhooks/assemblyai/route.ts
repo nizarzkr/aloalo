@@ -135,5 +135,18 @@ export async function POST(req: NextRequest) {
   })
 
   console.log('[webhook/assemblyai] ✅ Transcription OK pour call:', call.id, `(${durationSeconds}s, ${costEur}€)`)
+
+  // 7. Fire-and-forget vers /api/analyze
+  //    AssemblyAI a un timeout court (~10s) sur notre webhook ; l'analyse Claude
+  //    peut prendre 5-15s. On répond 200 immédiatement et on lance l'analyse en arrière-plan.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  fetch(`${appUrl}/api/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callId: call.id }),
+  }).catch((err) => {
+    console.error('[webhook/assemblyai] Erreur fire-and-forget /api/analyze:', err)
+  })
+
   return NextResponse.json({ received: true })
 }
