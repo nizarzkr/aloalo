@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { MOCK_TRANSCRIPTS } from '@/lib/dev/mock-transcripts'
+import { createClient } from '@/lib/supabase/server'
 
 // Sécurité : cet endpoint ne fonctionne qu'en développement
 if (process.env.NODE_ENV === 'production') {
@@ -25,27 +26,38 @@ export async function POST(req: NextRequest) {
 
   const transcript = MOCK_TRANSCRIPTS[transcriptIndex]
 
-  // Récupérer l'organization_id du premier utilisateur en base
-  // (en dev on a forcément un seul user inscrit — nous)
-  const { createClient } = await import('@supabase/supabase-js')
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SECRET_KEY!
-  )
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('id')
-    .limit(1)
+  // L'appel simulé est rattaché à l'org de l'utilisateur connecté (cookie de session).
+  // Avant : on prenait la première org en DB → multi-comptes en dev = collision possible.
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Tu dois être connecté pour simuler un appel.' },
+      { status: 401 },
+    )
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('organization_id')
+    .eq('id', user.id)
     .single()
 
-  if (!org) {
-    return NextResponse.json({ error: 'Aucune organisation trouvée. Inscris-toi d\'abord.' }, { status: 404 })
+  if (!profile?.organization_id) {
+    return NextResponse.json(
+      { error: 'Profil sans organisation — inscris-toi d\'abord.' },
+      { status: 404 },
+    )
   }
+
+  const organizationId = profile.organization_id
 
   // Forger le payload Ringover (format réel de leur API)
   const fakePayload = {
     event: 'call.ended',
-    organization_id: org.id,
+    organization_id: organizationId,
     call: {
       id: `sim_${Date.now()}`,
       from_number: transcript.caller_number,
