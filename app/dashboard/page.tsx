@@ -109,7 +109,7 @@ export default async function DashboardPage() {
       supabase
         .from("calls")
         .select(
-          "id, started_at, created_at, duration_seconds, status, contact_name, contact_phone, analyses ( score_global )",
+          "id, started_at, created_at, duration_seconds, status, contact_name, callee_number, analyses ( score_global )",
         )
         .eq("organization_id", orgFilter)
         .order("created_at", { ascending: false })
@@ -218,7 +218,7 @@ export default async function DashboardPage() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">
                             {call.contact_name ??
-                              call.contact_phone ??
+                              call.callee_number ??
                               "Appel sans contact"}
                           </p>
                           <p className="text-xs text-muted-foreground">

@@ -154,7 +154,7 @@ export default async function CallDetailPage({
       `
       id,
       contact_name,
-      contact_phone,
+      callee_number,
       started_at,
       created_at,
       duration_seconds,
@@ -192,7 +192,7 @@ export default async function CallDetailPage({
   const status = call.status as string;
   const dateRef = call.started_at ?? call.created_at;
   const contactDisplay =
-    call.contact_name ?? call.contact_phone ?? "Appel sans contact";
+    call.contact_name ?? call.callee_number ?? "Appel sans contact";
 
   const segments = (call.transcript_segments ?? null) as
     | TranscriptSegment[]
