@@ -33,7 +33,7 @@ export default async function DashboardLayout({
     : profile?.organizations;
 
   return (
-    <div className="flex min-h-screen flex-1">
+    <div className="flex min-h-screen flex-1 flex-col md:flex-row">
       <Sidebar
         fullName={profile?.full_name ?? ""}
         organizationName={organization?.name ?? ""}

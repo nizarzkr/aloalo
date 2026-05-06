@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -144,7 +144,7 @@ export default async function CallDetailPage({
     .single();
 
   const orgId = profile?.organization_id;
-  if (!orgId) redirect("/dashboard");
+  if (!orgId) notFound();
 
   // L'embed `analyses(...)` ramène directement le résultat IA. Le filtre
   // organization_id verrouille l'accès cross-org même si le slug est connu.
@@ -178,7 +178,7 @@ export default async function CallDetailPage({
     .eq("organization_id", orgId)
     .maybeSingle();
 
-  if (!call) redirect("/dashboard");
+  if (!call) notFound();
 
   // L'embed FK 1-to-1 : objet ou tableau selon ce que PostgREST détecte.
   const analysisRel = call.analyses as
@@ -245,9 +245,9 @@ export default async function CallDetailPage({
           <Card>
             <CardHeader>
               <CardDescription>Score global</CardDescription>
-              <CardTitle className="text-5xl font-bold tabular-nums tracking-tight">
+              <CardTitle className="text-4xl font-bold tabular-nums tracking-tight md:text-5xl">
                 {scoreGlobal ?? "–"}
-                <span className="ml-1 text-2xl font-medium text-muted-foreground">
+                <span className="ml-1 text-xl font-medium text-muted-foreground md:text-2xl">
                   /100
                 </span>
               </CardTitle>
@@ -438,7 +438,7 @@ export default async function CallDetailPage({
                       </div>
                       <p
                         className={cn(
-                          "max-w-[80%] rounded-2xl px-3 py-2 text-sm",
+                          "max-w-[90%] rounded-2xl px-3 py-2 text-sm md:max-w-[80%]",
                           isCommercial
                             ? "bg-blue-50 text-blue-950 dark:bg-blue-950/40 dark:text-blue-50"
                             : "bg-muted text-foreground",

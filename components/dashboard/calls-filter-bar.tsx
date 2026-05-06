@@ -56,7 +56,7 @@ export function CallsFilterBar() {
         value={currentPeriod}
         onValueChange={(value) => update("period", value as string)}
       >
-        <SelectTrigger className="min-w-44">
+        <SelectTrigger className="w-full sm:w-auto sm:min-w-44">
           <SelectValue>
             {(v: string | null) => PERIOD_LABEL[v ?? "all"] ?? "Toute période"}
           </SelectValue>
@@ -74,7 +74,7 @@ export function CallsFilterBar() {
         value={currentScore}
         onValueChange={(value) => update("score", value as string)}
       >
-        <SelectTrigger className="min-w-44">
+        <SelectTrigger className="w-full sm:w-auto sm:min-w-44">
           <SelectValue>
             {(v: string | null) => SCORE_LABEL[v ?? "all"] ?? "Tous les scores"}
           </SelectValue>
