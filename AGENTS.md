@@ -64,6 +64,7 @@ ASSEMBLYAI_API_KEY=...
 ANTHROPIC_API_KEY=sk-ant-...
 STRIPE_SECRET_KEY=sk_test_...
 RESEND_API_KEY=re_...
+NEXT_PUBLIC_APP_URL=https://...   # base URL utilisée pour les liens d'invitation (J8)
 ```
 
 Ajouts prévus : `STRIPE_WEBHOOK_SECRET` (J9), `RINGOVER_WEBHOOK_SECRET` (J3).
@@ -78,7 +79,9 @@ Ajouts prévus : `STRIPE_WEBHOOK_SECRET` (J9), `RINGOVER_WEBHOOK_SECRET` (J3).
 - `calls` — appels Ringover/Aircall/simulés, pipeline `pending → transcribing → analyzed`
 - `analyses` — résultat IA d'un appel (1-to-1 avec `calls`), scores + conseils
 - `usage_logs` — coûts API par org (AssemblyAI, Anthropic, Resend)
-- `invitations` — liens magiques pour rejoindre une org (utilisé au J8)
+- `invitations` — liens magiques pour rejoindre une org (J8 étape 2)
+  - `token text` (et non `uuid`) — hex 32 chars sans tirets, généré par DB
+  - À l'invitation, `role` ∈ `{'manager', 'sales'}` (un owner ne s'auto-réplique pas)
 
 Trigger `on_auth_user_created` (fonction `public.handle_new_user`) : à chaque signup `auth.users`, crée auto une org + un profile owner. Les valeurs `full_name` et `organization_name` viennent de `raw_user_meta_data` envoyé par le formulaire signup côté Next.js.
 
