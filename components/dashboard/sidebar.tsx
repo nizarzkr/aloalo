@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  CreditCard,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/calls", label: "Appels", icon: Phone },
   { href: "/dashboard/team", label: "Équipe", icon: Users },
+  { href: "/dashboard/billing", label: "Facturation", icon: CreditCard },
   { href: "/dashboard/settings", label: "Paramètres", icon: Settings },
 ];
 
