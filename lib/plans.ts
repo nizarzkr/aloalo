@@ -22,6 +22,23 @@ export const PLAN_LIMITS: Record<EffectivePlan, number> = {
   scale: 2000,
 };
 
+// Libellés et prix d'affichage. Centralisés ici pour que tout consommateur UI
+// (banner d'upgrade, futures emails de quota, etc.) parte de la même source.
+// Le catalogue détaillé (priceId Stripe, features) reste sur la page billing.
+export const PLAN_NAMES: Record<EffectivePlan, string> = {
+  free: "Free",
+  starter: "Starter",
+  growth: "Growth",
+  scale: "Scale",
+};
+
+export const PLAN_PRICES: Record<EffectivePlan, string> = {
+  free: "0 € / mois",
+  starter: "49 € / mois",
+  growth: "99 € / mois",
+  scale: "199 € / mois",
+};
+
 function adminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -73,11 +90,11 @@ async function getPeriodStart(
 }
 
 // Compte les analyses 'analyzed' depuis le début de la période et compare au
-// quota du plan. Renvoie current/limit aussi pour l'affichage UX (402 + UI).
+// quota du plan. Renvoie used/limit aussi pour l'affichage UX (402 + UI).
 export async function checkUsageLimit(
   orgId: string,
   plan: EffectivePlan,
-): Promise<{ allowed: boolean; current: number; limit: number }> {
+): Promise<{ allowed: boolean; used: number; limit: number }> {
   const limit = PLAN_LIMITS[plan];
   const supabase = adminClient();
 
@@ -104,9 +121,9 @@ export async function checkUsageLimit(
     // Erreur transient DB : on laisse passer pour ne pas bloquer l'utilisateur
     // sur un coup de chaud Supabase. Coût max : 1 analyse "offerte".
     console.error("[plans] checkUsageLimit count error:", error);
-    return { allowed: true, current: 0, limit };
+    return { allowed: true, used: 0, limit };
   }
 
-  const current = count ?? 0;
-  return { allowed: current < limit, current, limit };
+  const used = count ?? 0;
+  return { allowed: used < limit, used, limit };
 }

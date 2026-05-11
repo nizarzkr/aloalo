@@ -101,20 +101,20 @@ export async function POST(req: NextRequest) {
       .from('calls')
       .update({
         status: 'failed',
-        error_message: `USAGE_LIMIT_REACHED: ${usageCheck.current}/${usageCheck.limit} (${plan})`,
+        error_message: `USAGE_LIMIT_REACHED: ${usageCheck.used}/${usageCheck.limit} (${plan})`,
       })
       .eq('id', callId)
 
     console.log(
       '[analyze] 🚫 Limite atteinte org:',
       call.organization_id,
-      `${usageCheck.current}/${usageCheck.limit} (${plan})`,
+      `${usageCheck.used}/${usageCheck.limit} (${plan})`,
     )
 
     return NextResponse.json(
       {
         error: 'USAGE_LIMIT_REACHED',
-        current: usageCheck.current,
+        used: usageCheck.used,
         limit: usageCheck.limit,
         plan,
       },
