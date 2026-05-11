@@ -9,7 +9,7 @@
 // ============================================================================
 
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { UserPlus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +61,10 @@ type Props = {
   pending: PendingInvitation[];
   isOwner: boolean;
   currentUserId: string;
+  // Slot server-rendered (cf. team-leaderboard.tsx) inséré au-dessus de la
+  // liste des membres. Passé en ReactNode pour pouvoir mélanger composant
+  // serveur et client sans hisser tout le calcul ici.
+  leaderboard?: ReactNode;
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -103,6 +107,7 @@ export function TeamView({
   pending: initialPending,
   isOwner,
   currentUserId,
+  leaderboard,
 }: Props) {
   // État local : on retire les lignes de la liste après une action réussie
   // sans avoir à refetch toute la page.
@@ -170,6 +175,8 @@ export function TeamView({
         </div>
         {isOwner ? <InviteMemberDialog onInvited={handleInvited} /> : null}
       </header>
+
+      {leaderboard}
 
       <MembersSection
         members={members}
