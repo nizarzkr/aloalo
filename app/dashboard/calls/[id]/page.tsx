@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { UpgradeBanner } from "@/components/dashboard/upgrade-banner";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -159,6 +160,7 @@ export default async function CallDetailPage({
       created_at,
       duration_seconds,
       status,
+      error_message,
       transcript_segments,
       analyses (
         score_global,
@@ -216,6 +218,9 @@ export default async function CallDetailPage({
         <ArrowLeft className="size-4" />
         Retour aux appels
       </Link>
+
+      {/* Bannière paywall : visible uniquement si error_message contient USAGE_LIMIT_REACHED */}
+      <UpgradeBanner errorMessage={call.error_message as string | null} />
 
       {/* Header appel */}
       <header className="mb-8 flex flex-wrap items-start justify-between gap-4">

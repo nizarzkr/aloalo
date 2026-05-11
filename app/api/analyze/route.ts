@@ -25,6 +25,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { analyzeCall, estimateCostEur, ANALYSIS_MODEL } from '@/lib/claude'
 import type { TranscriptSegment } from '@/lib/assemblyai'
+import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
 
 function getAdminClient() {
   return createClient(
@@ -78,6 +79,48 @@ export async function POST(req: NextRequest) {
   const segments: TranscriptSegment[] = Array.isArray(call.transcript_segments)
     ? (call.transcript_segments as TranscriptSegment[])
     : []
+
+  // 2bis. Paywall — on bloque AVANT l'appel Claude (sinon on paye pour rien).
+  // Le call passe en 'failed' avec un error_message taggé USAGE_LIMIT_REACHED
+  // que la page détail saura reconnaître pour afficher la bannière upgrade.
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('subscription_status, subscription_plan')
+    .eq('id', call.organization_id)
+    .single()
+
+  const plan = resolveEffectivePlan(
+    org?.subscription_status ?? null,
+    org?.subscription_plan ?? null,
+  )
+
+  const usageCheck = await checkUsageLimit(call.organization_id, plan)
+
+  if (!usageCheck.allowed) {
+    await supabase
+      .from('calls')
+      .update({
+        status: 'failed',
+        error_message: `USAGE_LIMIT_REACHED: ${usageCheck.current}/${usageCheck.limit} (${plan})`,
+      })
+      .eq('id', callId)
+
+    console.log(
+      '[analyze] 🚫 Limite atteinte org:',
+      call.organization_id,
+      `${usageCheck.current}/${usageCheck.limit} (${plan})`,
+    )
+
+    return NextResponse.json(
+      {
+        error: 'USAGE_LIMIT_REACHED',
+        current: usageCheck.current,
+        limit: usageCheck.limit,
+        plan,
+      },
+      { status: 402 },
+    )
+  }
 
   // 3. Passer en "analyzing"
   await supabase.from('calls').update({ status: 'analyzing' }).eq('id', callId)
