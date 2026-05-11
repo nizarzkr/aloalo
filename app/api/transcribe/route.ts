@@ -110,8 +110,14 @@ export async function POST(req: NextRequest) {
 
     console.log('[transcribe] ✅ Simulation transcription OK, call:', callId)
 
-    // Fire-and-forget vers /api/analyze (même pattern que le webhook AssemblyAI)
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    // Fire-and-forget vers /api/analyze. On utilise req.nextUrl.origin (l'host
+    // qui traite la requête courante) plutôt que NEXT_PUBLIC_APP_URL :
+    //   - en dev local → http://localhost:3000 (analyse traitée localement)
+    //   - en prod Vercel → https://aloalo.vercel.app (analyse traitée en prod)
+    // NEXT_PUBLIC_APP_URL pointe sur la prod et est réservé aux liens externes
+    // (invitations email J8) — l'utiliser ici renverrait les requêtes dev vers
+    // la prod, qui ne connaît pas le callId en question.
+    const appUrl = req.nextUrl.origin
     fetch(`${appUrl}/api/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

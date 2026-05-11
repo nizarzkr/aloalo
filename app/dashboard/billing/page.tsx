@@ -193,12 +193,21 @@ export default async function BillingPage({
   const currentPlanForButton: DbPlan | null =
     dbStatus === "canceled" ? null : dbPlan;
 
-  const subInfo =
-    dbStatus === "active" || dbStatus === "trial" || dbStatus === "past_due"
-      ? await fetchSubscriptionInfo(org?.stripe_subscription_id ?? null)
-      : null;
+  // On fetche TOUJOURS Stripe dès qu'on a un stripe_subscription_id :
+  // la source de vérité de cancel_at_period_end est Stripe, pas la DB.
+  // Conditionner sur dbStatus cachait la bannière "Annulation programmée"
+  // quand la DB était momentanément désynchronisée (webhook en retard, etc.).
+  const subInfo = await fetchSubscriptionInfo(
+    org?.stripe_subscription_id ?? null,
+  );
 
-  const cancelScheduled = subInfo?.cancelAtPeriodEnd ?? false;
+  // Annulation programmée : Stripe expose deux signaux selon la version d'API.
+  //  - cancel_at_period_end : flag historique (mis à true par les anciennes UI)
+  //  - cancel_at : timestamp de fin programmée (utilisé par le Customer Portal
+  //    récent, qui ne met PLUS le flag legacy à true).
+  // On considère "annulation programmée" dès que l'un OU l'autre est positif.
+  const cancelScheduled =
+    subInfo?.cancelAtPeriodEnd || !!subInfo?.cancelAt;
   // Date à afficher : si annulation programmée → cancel_at (fallback periodEnd).
   // Sinon → periodEnd (= prochaine date de renouvellement).
   const renewalDate = subInfo?.periodEnd ?? null;
