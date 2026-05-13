@@ -17,15 +17,11 @@ export default withSentryConfig(nextConfig, {
   // Identifiants du projet Sentry — à remplir quand le projet sera créé.
   // En attendant, valeurs vides = aucun warning bloquant.
   org: process.env.SENTRY_ORG ?? "aloalo",
-  project: process.env.SENTRY_PROJECT ?? "aloalo-web",
+  project: process.env.SENTRY_PROJECT ?? "aloalo-slug",
 
   // Silence les logs du plugin au build local. En CI Vercel, les logs sont
   // utiles pour diagnostiquer un upload de source maps qui échoue.
   silent: !process.env.CI,
-
-  // Désactive l'auto-injection du composant <SentryWebpackPluginInstrumentation/>
-  // — on gère nous-mêmes l'init via instrumentation-client.ts.
-  autoInstrumentServerFunctions: true,
 
   // Tunnel route pour bypass les adblockers (les events sont proxyés via notre
   // domaine au lieu d'aller direct sur ingest.sentry.io). Optionnel mais

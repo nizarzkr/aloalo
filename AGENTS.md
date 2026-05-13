@@ -70,7 +70,7 @@ UPSTASH_REDIS_REST_TOKEN=...                    # rate limiting (J13)
 NEXT_PUBLIC_SENTRY_DSN=https://...@sentry.io/...   # observability (J13) — public par design
 SENTRY_AUTH_TOKEN=sntrys_...                       # upload source maps au build (Vercel uniquement)
 SENTRY_ORG=aloalo                                   # slug de l'organisation Sentry
-SENTRY_PROJECT=aloalo-web                           # slug du projet Sentry
+SENTRY_PROJECT=aloalo-slug                          # slug du projet Sentry
 ```
 
 Ajouts prévus : `STRIPE_WEBHOOK_SECRET` (J9), `RINGOVER_WEBHOOK_SECRET` (J3).
