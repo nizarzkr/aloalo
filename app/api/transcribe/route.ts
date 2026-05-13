@@ -7,6 +7,8 @@
  * Body attendu :
  *   {
  *     callId: string
+ *     audioUrl?: string          // mode réel : URL audio fraîchement résolue
+ *                                // par le webhook (priorité sur calls.audio_url)
  *     simTranscript?: {          // présent uniquement en mode simulation
  *       text: string
  *       segments: TranscriptSegment[]
@@ -44,14 +46,14 @@ function getAdminClient() {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { callId?: string; simTranscript?: SimTranscript }
+  let body: { callId?: string; audioUrl?: string; simTranscript?: SimTranscript }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { callId, simTranscript } = body
+  const { callId, audioUrl, simTranscript } = body
   if (!callId) {
     return NextResponse.json({ error: 'callId requis' }, { status: 400 })
   }
@@ -130,7 +132,11 @@ export async function POST(req: NextRequest) {
   }
 
   // ── MODE RÉEL ──────────────────────────────────────────────────────────────
-  if (!call.audio_url) {
+  // Priorité : audioUrl passé par le webhook (fraîchement résolu via API
+  // Ringover) > valeur déjà stockée en DB (call.audio_url). On retombe sur la
+  // DB pour les retries manuels où on relance /api/transcribe sans body.
+  const effectiveAudioUrl = audioUrl ?? call.audio_url
+  if (!effectiveAudioUrl) {
     console.error('[transcribe] Pas d\'audio_url pour call:', callId)
     await supabase.from('calls').update({ status: 'failed' }).eq('id', callId)
     return NextResponse.json({ error: 'Pas d\'audio_url' }, { status: 422 })
@@ -140,7 +146,7 @@ export async function POST(req: NextRequest) {
   await supabase.from('calls').update({ status: 'transcribing' }).eq('id', callId)
 
   try {
-    const transcriptId = await requestTranscription(call.audio_url)
+    const transcriptId = await requestTranscription(effectiveAudioUrl)
 
     // AssemblyAI va notifier via webhook quand c'est fini.
     // On note le transcript_id dans les segments (champ libre jsonb) pour retrouver l'appel.

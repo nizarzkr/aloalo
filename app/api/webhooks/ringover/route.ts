@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { getRingoverCallRecording } from '@/lib/ringover'
 
 function verifySignature(body: string, signature: string, secret: string): boolean {
   const expected = crypto
@@ -89,7 +90,43 @@ export async function POST(req: NextRequest) {
 
   console.log('[webhook/ringover] Appel inséré ✅', call.id, '→ DB id:', insertedCall.id)
 
-  // 8. Déclencher la transcription en fire-and-forget
+  // 8. Récupérer l'URL audio via l'API Ringover si :
+  //    - on n'est pas en mode simulation (sinon on a déjà le transcript)
+  //    - et l'URL n'était pas déjà fournie dans le payload du webhook
+  //
+  //    Décision archi 2026-05-13 : chaque client a sa propre clé API
+  //    Ringover stockée sur son organisation. On la lit ici (admin client,
+  //    bypass RLS) pour appeler /v2/calls/{id}/recording.
+  let resolvedAudioUrl: string | null = (call.recording_url as string) ?? null
+
+  if (!simTranscript && !resolvedAudioUrl) {
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('ringover_api_key')
+      .eq('id', organizationId)
+      .single()
+
+    const apiKey = org?.ringover_api_key as string | null | undefined
+    if (apiKey) {
+      resolvedAudioUrl = await getRingoverCallRecording(call.id as string, apiKey)
+      if (resolvedAudioUrl) {
+        // On reflète l'URL dans la ligne calls pour traçabilité / retry.
+        await supabase
+          .from('calls')
+          .update({ audio_url: resolvedAudioUrl })
+          .eq('id', insertedCall.id)
+      } else {
+        console.warn('[webhook/ringover] Pas de recording dispo via API pour', call.id)
+      }
+    } else {
+      console.warn(
+        '[webhook/ringover] Org sans ringover_api_key — recording non récupérable:',
+        organizationId,
+      )
+    }
+  }
+
+  // 9. Déclencher la transcription en fire-and-forget
   //    On ne bloque pas la réponse Ringover sur le résultat de la transcription
   const transcribeUrl = new URL('/api/transcribe', req.url).toString()
   fetch(transcribeUrl, {
@@ -98,6 +135,9 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify({
       callId: insertedCall.id,
       ...(simTranscript ? { simTranscript } : {}),
+      // Passé uniquement en mode réel : /api/transcribe utilise audioUrl si
+      // présent, sinon retombe sur la valeur stockée en DB (audio_url).
+      ...(resolvedAudioUrl && !simTranscript ? { audioUrl: resolvedAudioUrl } : {}),
     }),
   }).catch((err) => {
     console.error('[webhook/ringover] Erreur déclenchement transcription:', err)
