@@ -23,6 +23,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { analyzeCall, estimateCostEur, ANALYSIS_MODEL } from '@/lib/claude'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
@@ -149,6 +150,10 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[analyze] Erreur Claude:', message)
+    Sentry.captureException(err, {
+      tags: { route: '/api/analyze', stage: 'claude' },
+      extra: { callId, organizationId: call.organization_id },
+    })
     await supabase
       .from('calls')
       .update({ status: 'failed', error_message: `Claude: ${message}` })
@@ -173,6 +178,10 @@ export async function POST(req: NextRequest) {
 
   if (insertError || !inserted) {
     console.error('[analyze] Erreur insert analyses:', insertError)
+    Sentry.captureException(insertError ?? new Error('analyses insert returned no row'), {
+      tags: { route: '/api/analyze', stage: 'db_insert_analyses' },
+      extra: { callId, organizationId: call.organization_id },
+    })
     await supabase
       .from('calls')
       .update({ status: 'failed', error_message: `DB insert: ${insertError?.message}` })

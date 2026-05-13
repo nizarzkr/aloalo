@@ -2,6 +2,7 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
+import * as Sentry from '@sentry/nextjs'
 
 // Mapping Price ID Stripe (mode test) → plan en DB.
 // Les Product IDs (prod_…) ne sont pas utilisables ici : Stripe envoie le Price ID
@@ -194,6 +195,10 @@ export async function POST(req: NextRequest) {
       event.type,
       err,
     )
+    Sentry.captureException(err, {
+      tags: { route: '/api/webhooks/stripe', eventType: event.type },
+      extra: { eventId: event.id },
+    })
     // On répond quand même 200 — éviter une boucle de retries Stripe sur un bug.
   }
 

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
+import * as Sentry from '@sentry/nextjs'
 import { getRingoverCallRecording } from '@/lib/ringover'
 import {
   webhookLimiter,
@@ -111,6 +112,14 @@ export async function POST(req: NextRequest) {
 
   if (error || !insertedCall) {
     console.error('[webhook/ringover] Erreur insertion:', error)
+    Sentry.captureException(error ?? new Error('calls insert returned no row'), {
+      tags: { route: '/api/webhooks/ringover', stage: 'db_insert_call' },
+      extra: {
+        organizationId,
+        ringoverCallId: call.id,
+        eventType: payload.event,
+      },
+    })
     return NextResponse.json({ error: 'DB error' }, { status: 500 })
   }
 
@@ -167,6 +176,10 @@ export async function POST(req: NextRequest) {
     }),
   }).catch((err) => {
     console.error('[webhook/ringover] Erreur déclenchement transcription:', err)
+    Sentry.captureException(err, {
+      tags: { route: '/api/webhooks/ringover', stage: 'trigger_transcribe' },
+      extra: { callId: insertedCall.id, organizationId },
+    })
   })
 
   return NextResponse.json({ received: true })
