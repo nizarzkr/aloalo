@@ -26,6 +26,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { analyzeCall, estimateCostEur, ANALYSIS_MODEL } from '@/lib/claude'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
+import {
+  apiLimiter,
+  checkRateLimit,
+  getClientKey,
+  rateLimitedResponse,
+} from '@/lib/rate-limit'
 
 function getAdminClient() {
   return createClient(
@@ -35,6 +41,14 @@ function getAdminClient() {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit — clé par IP. /api/analyze est appelée en fire-and-forget par les
+  // webhooks internes, le limiter protège surtout contre un déclenchement abusif
+  // externe.
+  const rl = await checkRateLimit(apiLimiter, getClientKey(req))
+  if (!rl.allowed) {
+    return rateLimitedResponse(rl.retryAfterSeconds)
+  }
+
   let body: { callId?: string }
   try {
     body = await req.json()

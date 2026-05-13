@@ -2,6 +2,13 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getRingoverCallRecording } from '@/lib/ringover'
+import {
+  webhookLimiter,
+  checkRateLimit,
+  getClientKey,
+  rateLimitedResponse,
+} from '@/lib/rate-limit'
+import { RingoverWebhookSchema } from '@/lib/validations'
 
 function verifySignature(body: string, signature: string, secret: string): boolean {
   const expected = crypto
@@ -16,6 +23,13 @@ function verifySignature(body: string, signature: string, secret: string): boole
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit — clé par IP. Volontairement avant la vérif HMAC pour absorber
+  // un flood AVANT de payer le coût d'un Buffer.from + HMAC compute.
+  const rl = await checkRateLimit(webhookLimiter, getClientKey(req))
+  if (!rl.allowed) {
+    return rateLimitedResponse(rl.retryAfterSeconds)
+  }
+
   // 1. Lire le body brut (nécessaire pour vérifier HMAC)
   const body = await req.text()
   const signature = req.headers.get('x-ringover-signature') ?? ''
@@ -28,35 +42,47 @@ export async function POST(req: NextRequest) {
   }
 
   // 3. Parser le payload Ringover
-  let payload: Record<string, unknown>
+  let rawPayload: unknown
   try {
-    payload = JSON.parse(body)
+    rawPayload = JSON.parse(body)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+
+  // 3bis. Validation Zod du payload — on tolère les champs inconnus
+  //       (passthrough) mais on vérifie la forme attendue.
+  const parsed = RingoverWebhookSchema.safeParse(rawPayload)
+  if (!parsed.success) {
+    console.error('[webhook/ringover] payload invalide:', parsed.error.issues)
+    return NextResponse.json(
+      { error: 'VALIDATION_ERROR', details: parsed.error.issues },
+      { status: 400 },
+    )
+  }
+  const payload = parsed.data
 
   // 4. On ne traite que les événements de fin d'appel
   if (payload.event !== 'call.ended') {
     return NextResponse.json({ received: true })
   }
 
-  // 5. Extraire les infos de l'appel
-  const call = payload.call as Record<string, unknown>
-  const organizationId = payload.organization_id as string
+  // 5. Extraire les infos de l'appel (déjà validées par Zod)
+  const call = payload.call
+  const organizationId = payload.organization_id
 
   // 6. Détecter le mode simulation
   //    Le simulate-call injecte _sim_transcript dans l'objet call du payload
-  const simTranscriptRaw = call._sim_transcript as {
-    text: string
-    segments: Array<{ speaker: string; text: string; start: number; end: number }>
-    mock_id?: string
-    title?: string
-  } | null
+  const simTranscriptRaw = call._sim_transcript ?? null
 
   const simTranscript = simTranscriptRaw
     ? {
         text: simTranscriptRaw.text,
-        segments: simTranscriptRaw.segments,
+        segments: simTranscriptRaw.segments as Array<{
+          speaker: string
+          text: string
+          start: number
+          end: number
+        }>,
         duration_seconds: call.duration as number,
         title: simTranscriptRaw.title,
       }

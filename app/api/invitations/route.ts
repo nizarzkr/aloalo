@@ -7,33 +7,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { createClient } from '@/lib/supabase/server'
-
-type Body = {
-  email?: unknown
-  role?: unknown
-}
-
-type ValidatedBody = {
-  email: string
-  role: 'manager' | 'sales'
-}
-
-const ALLOWED_ROLES = ['manager', 'sales'] as const
+import {
+  apiLimiter,
+  checkRateLimit,
+  getClientKey,
+  rateLimitedResponse,
+} from '@/lib/rate-limit'
+import { InvitationSchema } from '@/lib/validations'
 
 function getAdminClient() {
   return createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SECRET_KEY!,
   )
-}
-
-function validate(body: Body): ValidatedBody | null {
-  if (typeof body.email !== 'string' || typeof body.role !== 'string') return null
-  const email = body.email.trim().toLowerCase()
-  // Validation simple — l'email final est de toute façon vérifié par Resend.
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null
-  if (!ALLOWED_ROLES.includes(body.role as (typeof ALLOWED_ROLES)[number])) return null
-  return { email, role: body.role as 'manager' | 'sales' }
 }
 
 function buildEmailHtml(params: {
@@ -66,6 +52,12 @@ function buildEmailHtml(params: {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit — clé par IP (avant auth pour fail-fast sur flood non-authentifié).
+  const rl = await checkRateLimit(apiLimiter, getClientKey(req))
+  if (!rl.allowed) {
+    return rateLimitedResponse(rl.retryAfterSeconds)
+  }
+
   // 1. Auth
   const supabase = await createClient()
   const {
@@ -75,17 +67,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  // 2. Body
-  let raw: Body
+  // 2. Body — validation Zod
+  let raw: unknown
   try {
-    raw = (await req.json()) as Body
+    raw = await req.json()
   } catch {
     return NextResponse.json({ error: 'invalid_json' }, { status: 400 })
   }
-  const body = validate(raw)
-  if (!body) {
-    return NextResponse.json({ error: 'invalid_body' }, { status: 400 })
+  const parsed = InvitationSchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'VALIDATION_ERROR', details: parsed.error.issues },
+      { status: 400 },
+    )
   }
+  const body = parsed.data
 
   // 3. L'inviteur doit être owner — on lit son profil + son org via admin client
   //    pour récupérer aussi le nom de l'org sans dépendre de la RLS.

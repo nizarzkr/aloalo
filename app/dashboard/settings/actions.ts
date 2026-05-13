@@ -15,18 +15,13 @@ import { revalidatePath } from "next/cache";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
+import { OrgUpdateSchema, RingoverApiKeySchema } from "@/lib/validations";
 
 // Type de retour homogène : on évite redirect() pour pouvoir afficher
 // un message inline dans le formulaire (success/error).
 export type UpdateOrgResult =
   | { ok: true; message: string }
   | { ok: false; error: string };
-
-// Garde-fous côté serveur — la même URL passe aussi par le navigateur côté
-// rendu, mais on ne fait JAMAIS confiance au client.
-const MAX_NAME_LENGTH = 120;
-const MAX_URL_LENGTH = 500;
-const MAX_RINGOVER_KEY_LENGTH = 200;
 
 function getAdminClient() {
   return createAdminClient(
@@ -36,46 +31,24 @@ function getAdminClient() {
   );
 }
 
-// Validation d'URL minimaliste : on accepte http/https uniquement, vide = on
-// efface le logo. Renvoie la valeur normalisée ou null si vide.
-function normalizeLogoUrl(raw: string): { value: string | null } | { error: string } {
-  const trimmed = raw.trim();
-  if (trimmed === "") return { value: null };
-  if (trimmed.length > MAX_URL_LENGTH) {
-    return { error: `L'URL du logo dépasse ${MAX_URL_LENGTH} caractères.` };
-  }
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return { error: "L'URL du logo doit commencer par https:// (ou http://)." };
-    }
-    return { value: parsed.toString() };
-  } catch {
-    return { error: "L'URL du logo n'est pas valide." };
-  }
+// Concatène les messages Zod en une phrase lisible (UI form, pas API).
+function firstZodMessage(issues: { message: string }[]): string {
+  return issues[0]?.message ?? "Données invalides.";
 }
 
 export async function updateOrganization(
   _prev: UpdateOrgResult | null,
   formData: FormData,
 ): Promise<UpdateOrgResult> {
-  const name = String(formData.get("name") ?? "").trim();
-  const logoUrlRaw = String(formData.get("logo_url") ?? "");
-
-  if (name.length === 0) {
-    return { ok: false, error: "Le nom de l'organisation est obligatoire." };
+  // Validation Zod : name obligatoire, logo_url http(s) ou vide → null en DB.
+  const parsed = OrgUpdateSchema.safeParse({
+    name: formData.get("name"),
+    logo_url: formData.get("logo_url"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: firstZodMessage(parsed.error.issues) };
   }
-  if (name.length > MAX_NAME_LENGTH) {
-    return {
-      ok: false,
-      error: `Le nom dépasse ${MAX_NAME_LENGTH} caractères.`,
-    };
-  }
-
-  const logoCheck = normalizeLogoUrl(logoUrlRaw);
-  if ("error" in logoCheck) {
-    return { ok: false, error: logoCheck.error };
-  }
+  const { name, logo_url } = parsed.data;
 
   // 1. Session — on s'assure que le user est bien connecté.
   const supabase = await createClient();
@@ -108,7 +81,7 @@ export async function updateOrganization(
   // 3. Update — on update uniquement les champs concernés.
   const { error: updateError } = await admin
     .from("organizations")
-    .update({ name, logo_url: logoCheck.value })
+    .update({ name, logo_url })
     .eq("id", profile.organization_id);
 
   if (updateError) {
@@ -138,21 +111,20 @@ export async function updateRingoverApiKey(
   _prev: UpdateOrgResult | null,
   formData: FormData,
 ): Promise<UpdateOrgResult> {
-  const key = String(formData.get("ringover_api_key") ?? "").trim();
-
-  // Cas 1 — champ laissé vide : on considère que l'utilisateur ne souhaite
-  // pas modifier la clé existante. On retourne un succès silencieux pour
-  // éviter de polluer l'UI avec une erreur "champ requis".
-  if (key.length === 0) {
+  // Cas 1 — champ laissé vide : succès silencieux (l'utilisateur ne veut
+  // pas modifier la clé existante). On court-circuite AVANT Zod, qui
+  // rejetterait avec "clé API requise".
+  const rawKey = String(formData.get("ringover_api_key") ?? "").trim();
+  if (rawKey.length === 0) {
     return { ok: true, message: "Aucune modification (champ vide)." };
   }
 
-  if (key.length > MAX_RINGOVER_KEY_LENGTH) {
-    return {
-      ok: false,
-      error: `La clé dépasse ${MAX_RINGOVER_KEY_LENGTH} caractères.`,
-    };
+  // Validation Zod : non vide, max 200 chars, pas d'espaces internes.
+  const parsed = RingoverApiKeySchema.safeParse({ ringover_api_key: rawKey });
+  if (!parsed.success) {
+    return { ok: false, error: firstZodMessage(parsed.error.issues) };
   }
+  const key = parsed.data.ringover_api_key;
 
   // 1. Session
   const supabase = await createClient();

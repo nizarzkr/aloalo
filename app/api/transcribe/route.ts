@@ -30,6 +30,12 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { requestTranscription, estimateCostEur } from '@/lib/assemblyai'
 import type { TranscriptSegment } from '@/lib/assemblyai'
+import {
+  apiLimiter,
+  checkRateLimit,
+  getClientKey,
+  rateLimitedResponse,
+} from '@/lib/rate-limit'
 
 type SimTranscript = {
   text: string
@@ -46,6 +52,12 @@ function getAdminClient() {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit — clé par IP.
+  const rl = await checkRateLimit(apiLimiter, getClientKey(req))
+  if (!rl.allowed) {
+    return rateLimitedResponse(rl.retryAfterSeconds)
+  }
+
   let body: { callId?: string; audioUrl?: string; simTranscript?: SimTranscript }
   try {
     body = await req.json()

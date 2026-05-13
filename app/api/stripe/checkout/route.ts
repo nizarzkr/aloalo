@@ -9,6 +9,12 @@ import Stripe from "stripe";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import {
+  apiLimiter,
+  checkRateLimit,
+  getClientKey,
+  rateLimitedResponse,
+} from "@/lib/rate-limit";
 
 const PRICE_TO_PLAN: Record<string, "starter" | "growth" | "scale"> = {
   price_1TUOJlKEQtH8ak8XHjB05eAM: "starter",
@@ -17,6 +23,12 @@ const PRICE_TO_PLAN: Record<string, "starter" | "growth" | "scale"> = {
 };
 
 export async function POST(req: NextRequest) {
+  // Rate limit — clé par IP (avant auth pour fail-fast sur flood).
+  const rl = await checkRateLimit(apiLimiter, getClientKey(req));
+  if (!rl.allowed) {
+    return rateLimitedResponse(rl.retryAfterSeconds);
+  }
+
   // 1. Body
   let body: { priceId?: string };
   try {
