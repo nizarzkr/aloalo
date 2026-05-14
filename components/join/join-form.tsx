@@ -305,9 +305,11 @@ function AcceptOnlyCard({
 // ----------------------------------------------------------------------------
 function WrongAccountCard({ invitedEmail }: { invitedEmail: string }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleLogout() {
     setLoading(true);
+    setError(null);
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
@@ -315,6 +317,9 @@ function WrongAccountCard({ invitedEmail }: { invitedEmail: string }) {
       window.location.reload();
     } catch (err) {
       console.error(err);
+      setError(
+        "Impossible de vous déconnecter. Rafraîchissez la page et réessayez.",
+      );
       setLoading(false);
     }
   }
@@ -329,7 +334,15 @@ function WrongAccountCard({ invitedEmail }: { invitedEmail: string }) {
           pour accepter l&apos;invitation.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
+        {error ? (
+          <div
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {error}
+          </div>
+        ) : null}
         <Button onClick={handleLogout} disabled={loading} className="w-full">
           {loading ? "Déconnexion…" : "Se déconnecter"}
         </Button>

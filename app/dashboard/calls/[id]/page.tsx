@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clock, FileQuestion } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { EmptyState } from "@/components/dashboard/empty-state";
 import { UpgradeBanner } from "@/components/dashboard/upgrade-banner";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
@@ -200,6 +201,21 @@ export default async function CallDetailPage({
     | TranscriptSegment[]
     | null;
 
+  // États d'absence d'analyse — on les distingue pour donner un message clair.
+  // USAGE_LIMIT_REACHED a déjà sa propre bannière (UpgradeBanner) au-dessus,
+  // pas besoin de doubler.
+  const errorMsg = (call.error_message ?? null) as string | null;
+  const isUsageLimit = errorMsg?.includes("USAGE_LIMIT_REACHED") ?? false;
+  const isFailedNonUsage = status === "failed" && !isUsageLimit;
+  const isInProgress =
+    status === "pending" ||
+    status === "transcribing" ||
+    status === "transcribed" ||
+    status === "analyzing";
+  const isAnalyzedButMissing = status === "analyzed" && !analysis;
+  const showAnalysisStateBlock =
+    isFailedNonUsage || isInProgress || isAnalyzedButMissing;
+
   const strengths = (analysis?.strengths ?? []) as StrengthOrWeakness[];
   const weaknesses = (analysis?.weaknesses ?? []) as StrengthOrWeakness[];
   const summary = (analysis?.summary ?? "") as string;
@@ -242,6 +258,38 @@ export default async function CallDetailPage({
           {STATUS_LABEL[status] ?? status}
         </Badge>
       </header>
+
+      {/* État de l'analyse — affiché si l'appel n'a pas encore d'analyse exploitable */}
+      {showAnalysisStateBlock ? (
+        <section className="mb-10">
+          <Card className="p-2">
+            <CardContent>
+              {isFailedNonUsage ? (
+                <EmptyState
+                  icon={AlertTriangle}
+                  title="L'analyse a échoué"
+                  description={
+                    errorMsg ??
+                    "L'analyse n'a pas pu aboutir. Réessayez plus tard ou contactez le support."
+                  }
+                />
+              ) : isAnalyzedButMissing ? (
+                <EmptyState
+                  icon={FileQuestion}
+                  title="Analyse introuvable"
+                  description="L'analyse de cet appel n'a pas pu être chargée. Réessayez dans un instant."
+                />
+              ) : (
+                <EmptyState
+                  icon={Clock}
+                  title="Analyse en cours"
+                  description="Votre appel est en cours de traitement (transcription puis analyse IA). Le résultat apparaîtra ici dans quelques instants — actualisez la page."
+                />
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       {/* Scores — uniquement si l'appel est analysé */}
       {status === "analyzed" && analysis ? (

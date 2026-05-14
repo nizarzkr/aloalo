@@ -13,7 +13,11 @@ export async function signup(formData: FormData) {
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signUp({
+  // emailRedirectTo fixe la destination du lien dans l'email de confirmation.
+  // Sans ça, Supabase retombe sur "Site URL" (la home) — ce qu'on veut éviter.
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -22,6 +26,7 @@ export async function signup(formData: FormData) {
         full_name: fullName,
         organization_name: organizationName,
       },
+      emailRedirectTo: `${baseUrl}/auth/callback`,
     },
   });
 
@@ -30,7 +35,13 @@ export async function signup(formData: FormData) {
   }
 
   revalidatePath("/", "layout");
-  redirect("/dashboard");
+
+  // Si Supabase ouvre la session direct (confirm-email OFF, mode dev) → dashboard.
+  // Sinon (confirm-email ON, mode prod) → page d'attente avec rappel email.
+  if (data.session) {
+    redirect("/dashboard");
+  }
+  redirect(`/check-email?email=${encodeURIComponent(email)}`);
 }
 
 export async function login(formData: FormData) {

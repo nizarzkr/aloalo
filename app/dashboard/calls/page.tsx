@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { PhoneCall, Play } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CallsFilterBar } from "@/components/dashboard/calls-filter-bar";
+import { EmptyState } from "@/components/dashboard/empty-state";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -153,6 +155,13 @@ export default async function CallsListPage({
   const hasPrevious = currentPage > 1;
   const hasNext = currentPage < totalPages;
 
+  // Distinction empty state global vs "filtre sans résultat" : on regarde
+  // l'état des filtres tel qu'envoyé en query string (et non `count`, qui est
+  // toujours filtré).
+  const hasActiveFilters =
+    (period && period !== "all") || (score && score !== "all");
+  const isInitiallyEmpty = totalCount === 0 && !hasActiveFilters;
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-10 md:px-10">
       <header className="mb-8">
@@ -170,10 +179,27 @@ export default async function CallsListPage({
 
       <Card className="p-2">
         {calls.length === 0 ? (
-          <CardContent className="py-12 text-center">
-            <p className="text-sm text-muted-foreground">
-              Aucun appel ne correspond à ces filtres.
-            </p>
+          <CardContent className="py-4">
+            {isInitiallyEmpty ? (
+              <EmptyState
+                icon={PhoneCall}
+                title="Aucun appel analysé"
+                description="Vos appels Ringover apparaîtront ici une fois analysés. Vous pouvez simuler un appel pour découvrir la plateforme."
+                action={
+                  <Link
+                    href="/dev/test"
+                    className={cn(buttonVariants({ size: "lg" }))}
+                  >
+                    <Play className="size-4" />
+                    Simuler un appel
+                  </Link>
+                }
+              />
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Aucun appel ne correspond à ces filtres.
+              </p>
+            )}
           </CardContent>
         ) : (
           <>

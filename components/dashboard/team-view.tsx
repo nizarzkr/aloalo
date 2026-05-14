@@ -10,7 +10,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { UserPlus } from "lucide-react";
+import { Users, UserPlus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { EmptyState } from "@/components/dashboard/empty-state";
 import { cn } from "@/lib/utils";
 
 type Member = {
@@ -183,6 +184,18 @@ export function TeamView({
         currentUserId={currentUserId}
         isOwner={isOwner}
         onRemove={handleRemoveMember}
+        // Solo owner sans invitation en attente = équipe vide en pratique.
+        // L'action invite est rendue via le même dialog que dans le header,
+        // avec sa propre instance d'état.
+        isPracticallyEmpty={
+          members.length === 0 ||
+          (members.length === 1 &&
+            members[0].id === currentUserId &&
+            pending.length === 0)
+        }
+        emptyAction={
+          isOwner ? <InviteMemberDialog onInvited={handleInvited} /> : null
+        }
       />
 
       {pending.length > 0 ? (
@@ -214,14 +227,35 @@ function MembersSection({
   currentUserId,
   isOwner,
   onRemove,
+  isPracticallyEmpty,
+  emptyAction,
 }: {
   members: Member[];
   currentUserId: string;
   isOwner: boolean;
   onRemove: (member: Member) => void | Promise<void>;
+  isPracticallyEmpty: boolean;
+  emptyAction: ReactNode;
 }) {
   // Un owner ne peut pas se retirer lui-même → on cache le bouton dans ce cas.
   const canRemove = (m: Member) => isOwner && m.id !== currentUserId;
+
+  if (isPracticallyEmpty) {
+    return (
+      <section>
+        <Card className="p-2">
+          <CardContent>
+            <EmptyState
+              icon={Users}
+              title="Votre équipe est vide"
+              description="Invitez vos commerciaux et managers pour analyser leurs appels et suivre leur progression."
+              action={emptyAction}
+            />
+          </CardContent>
+        </Card>
+      </section>
+    );
+  }
 
   return (
     <section>
