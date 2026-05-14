@@ -9,8 +9,9 @@
 // ============================================================================
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Users, UserPlus } from "lucide-react";
+import { Check, Users, UserPlus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -103,6 +104,8 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
+type Toast = { message: string; kind: "success" | "error" } | null;
+
 export function TeamView({
   members: initialMembers,
   pending: initialPending,
@@ -110,20 +113,26 @@ export function TeamView({
   currentUserId,
   leaderboard,
 }: Props) {
+  const router = useRouter();
   // État local : on retire les lignes de la liste après une action réussie
   // sans avoir à refetch toute la page.
   const [members, setMembers] = useState<Member[]>(initialMembers);
   const [pending, setPending] = useState<PendingInvitation[]>(initialPending);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast>(null);
 
   useEffect(() => {
     if (!toast) return;
-    const id = window.setTimeout(() => setToast(null), 3500);
+    // 6s pour laisser le temps de lire (avant: 3.5s, trop court selon les
+    // retours du smoke test J13).
+    const id = window.setTimeout(() => setToast(null), 6000);
     return () => window.clearTimeout(id);
   }, [toast]);
 
   function handleInvited(email: string) {
-    setToast(`Invitation envoyée à ${email}`);
+    setToast({ message: `Invitation envoyée à ${email}`, kind: "success" });
+    // Re-render le Server Component parent pour faire apparaître la nouvelle
+    // invitation dans la table "en attente" sans reload manuel.
+    router.refresh();
   }
 
   async function handleCancelInvitation(inv: PendingInvitation) {
@@ -135,11 +144,17 @@ export function TeamView({
       const payload = (await res.json().catch(() => null)) as
         | { error?: string }
         | null;
-      setToast(`Échec de l'annulation : ${payload?.error ?? "erreur"}`);
+      setToast({
+        message: `Échec de l'annulation : ${payload?.error ?? "erreur"}`,
+        kind: "error",
+      });
       return;
     }
     setPending((prev) => prev.filter((p) => p.id !== inv.id));
-    setToast(`Invitation annulée pour ${inv.email}`);
+    setToast({
+      message: `Invitation annulée pour ${inv.email}`,
+      kind: "success",
+    });
   }
 
   async function handleRemoveMember(member: Member) {
@@ -158,11 +173,17 @@ export function TeamView({
       const payload = (await res.json().catch(() => null)) as
         | { error?: string }
         | null;
-      setToast(`Échec du retrait : ${payload?.error ?? "erreur"}`);
+      setToast({
+        message: `Échec du retrait : ${payload?.error ?? "erreur"}`,
+        kind: "error",
+      });
       return;
     }
     setMembers((prev) => prev.filter((m) => m.id !== member.id));
-    setToast(`${displayName} a été retiré de l'équipe`);
+    setToast({
+      message: `${displayName} a été retiré de l'équipe`,
+      kind: "success",
+    });
   }
 
   return (
@@ -208,11 +229,31 @@ export function TeamView({
 
       {toast ? (
         <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-6 right-6 z-50 rounded-lg border border-border bg-background px-4 py-3 text-sm shadow-lg"
+          role={toast.kind === "error" ? "alert" : "status"}
+          aria-live={toast.kind === "error" ? "assertive" : "polite"}
+          className={cn(
+            "fixed bottom-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-lg border bg-background px-4 py-3 text-sm shadow-lg",
+            toast.kind === "success"
+              ? "border-emerald-500/30"
+              : "border-destructive/40",
+          )}
         >
-          {toast}
+          <div
+            aria-hidden
+            className={cn(
+              "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full",
+              toast.kind === "success"
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+                : "bg-destructive/10 text-destructive",
+            )}
+          >
+            {toast.kind === "success" ? (
+              <Check className="size-3.5" />
+            ) : (
+              <span className="text-xs font-bold">!</span>
+            )}
+          </div>
+          <span className="leading-snug">{toast.message}</span>
         </div>
       ) : null}
     </div>

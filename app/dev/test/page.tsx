@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { MOCK_TRANSCRIPTS } from '@/lib/dev/mock-transcripts'
 
@@ -15,6 +16,7 @@ type SimResult = {
 }
 
 export default function DevTestPage() {
+  const router = useRouter()
   const [loading, setLoading] = useState<number | null>(null)
   const [results, setResults] = useState<SimResult[]>([])
 
@@ -27,6 +29,14 @@ export default function DevTestPage() {
         body: JSON.stringify({ transcriptIndex: index }),
       })
       const data = await res.json()
+      // Sur succès, on file direct sur la liste des appels — l'appel apparaît
+      // en "pending" puis bascule en "analyzed" au bout de 30-60s (refresh
+      // manuel nécessaire, pas de live updates). En échec, on reste sur la
+      // page pour montrer le détail technique.
+      if (data.success) {
+        router.push('/dashboard/calls')
+        return
+      }
       setResults(prev => [{ ...data }, ...prev])
     } catch (err) {
       setResults(prev => [

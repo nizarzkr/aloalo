@@ -184,14 +184,13 @@ export default async function BillingPage({
   const dbPlan = (org?.subscription_plan ?? "starter") as DbPlan;
   const dbStatus = (org?.subscription_status ?? "trial") as DbStatus;
 
-  // Plan affiché : "Free" quand l'abo est annulé, sinon le plan en DB.
-  const displayedPlan: PlanKey = dbStatus === "canceled" ? "free" : dbPlan;
-
-  // Comparaison "is current plan" pour désactiver le bouton :
-  //   - canceled : aucun plan n'est "actuel"
-  //   - sinon : on compare au subscription_plan
-  const currentPlanForButton: DbPlan | null =
-    dbStatus === "canceled" ? null : dbPlan;
+  // L'org n'a un plan "réel" que si elle a souscrit (active/past_due).
+  // En trial (défaut au signup) ou canceled, l'UI doit afficher "Free" et
+  // aucune carte ne doit porter le badge "Plan actuel" — sinon l'user croit
+  // qu'il a déjà choisi quelque chose alors qu'il n'a fait que s'inscrire.
+  const hasChosenPlan = dbStatus === "active" || dbStatus === "past_due";
+  const displayedPlan: PlanKey = hasChosenPlan ? dbPlan : "free";
+  const currentPlanForButton: DbPlan | null = hasChosenPlan ? dbPlan : null;
 
   // On fetche TOUJOURS Stripe dès qu'on a un stripe_subscription_id :
   // la source de vérité de cancel_at_period_end est Stripe, pas la DB.
