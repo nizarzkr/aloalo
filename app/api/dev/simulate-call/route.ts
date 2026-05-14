@@ -2,15 +2,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { MOCK_TRANSCRIPTS } from '@/lib/dev/mock-transcripts'
 import { createClient } from '@/lib/supabase/server'
+import {
+  apiLimiter,
+  checkRateLimit,
+  getClientKey,
+  rateLimitedResponse,
+} from '@/lib/rate-limit'
 
-// Sécurité : cet endpoint ne fonctionne qu'en développement
-if (process.env.NODE_ENV === 'production') {
-  console.warn('[dev/simulate-call] Tentative d\'accès en production bloquée')
-}
+// Endpoint ouvert en prod (phase MVP feedback). La route exige une session
+// valide + rate-limit Upstash pour contenir le coût AssemblyAI/Anthropic en
+// cas d'abus.
 
 export async function POST(req: NextRequest) {
-  if (process.env.NODE_ENV === 'production') {
-    return NextResponse.json({ error: 'Not available in production' }, { status: 403 })
+  // Rate limit avant tout traitement — un simulate-call déclenche une vraie
+  // analyse Claude (~0,005€ par hit). 10 req/10s par IP est suffisant pour
+  // l'usage normal et stoppe net les boucles automatisées.
+  const rl = await checkRateLimit(apiLimiter, getClientKey(req))
+  if (!rl.allowed) {
+    return rateLimitedResponse(rl.retryAfterSeconds)
   }
 
   const secret = process.env.RINGOVER_WEBHOOK_SECRET ?? ''

@@ -3,10 +3,9 @@
 import { useState } from 'react'
 import { MOCK_TRANSCRIPTS } from '@/lib/dev/mock-transcripts'
 
-// Sécurité : rediriger en production
-if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production') {
-  window.location.href = '/'
-}
+// Accès ouvert en prod pour la phase MVP feedback : un user connecté peut
+// simuler un appel sans avoir branché son compte Ringover. La route API
+// /api/dev/simulate-call exige une session valide et est rate-limited.
 
 type SimResult = {
   success: boolean
