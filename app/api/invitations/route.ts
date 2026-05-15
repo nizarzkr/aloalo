@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { createClient } from '@/lib/supabase/server'
@@ -176,12 +177,17 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('resend send failed', err)
     // L'invitation est créée, on retourne 200 mais on signale l'échec mail.
+    // revalidatePath : sans ça, le Server Component /dashboard/team peut
+    // resservir des données cachées et la nouvelle ligne n'apparaît jamais
+    // après router.refresh() côté client (cf. doc Next 16 use-router.md).
+    revalidatePath('/dashboard/team')
     return NextResponse.json(
       { success: true, invitation_id: invitation.id, email_sent: false },
       { status: 200 },
     )
   }
 
+  revalidatePath('/dashboard/team')
   return NextResponse.json(
     { success: true, invitation_id: invitation.id },
     { status: 200 },

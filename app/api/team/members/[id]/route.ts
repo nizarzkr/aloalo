@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 
@@ -75,5 +76,8 @@ export async function PATCH(
     return NextResponse.json({ error: 'update_failed' }, { status: 500 })
   }
 
+  // Invalide le cache serveur de /dashboard/team — sinon le membre détaché
+  // peut continuer d'apparaître au prochain rendu serveur (cf. POST).
+  revalidatePath('/dashboard/team')
   return NextResponse.json({ success: true })
 }

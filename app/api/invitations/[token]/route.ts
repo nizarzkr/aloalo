@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 
@@ -155,5 +156,8 @@ export async function DELETE(
     return NextResponse.json({ error: 'delete_failed' }, { status: 500 })
   }
 
+  // Invalide le cache serveur de /dashboard/team — sinon la ligne supprimée
+  // pourrait réapparaître au prochain rendu serveur (cf. POST).
+  revalidatePath('/dashboard/team')
   return NextResponse.json({ success: true })
 }

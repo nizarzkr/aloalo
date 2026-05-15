@@ -120,6 +120,17 @@ export function TeamView({
   const [pending, setPending] = useState<PendingInvitation[]>(initialPending);
   const [toast, setToast] = useState<Toast>(null);
 
+  // Resync du state local quand les props serveur changent (après router.refresh()).
+  // Sans ça, un `useState(prop)` reste figé sur sa valeur initiale et la table
+  // "Invitations en attente" ne se rafraîchit jamais.
+  useEffect(() => {
+    setMembers(initialMembers);
+  }, [initialMembers]);
+
+  useEffect(() => {
+    setPending(initialPending);
+  }, [initialPending]);
+
   useEffect(() => {
     if (!toast) return;
     // 6s pour laisser le temps de lire (avant: 3.5s, trop court selon les
@@ -128,12 +139,12 @@ export function TeamView({
     return () => window.clearTimeout(id);
   }, [toast]);
 
-  function handleInvited(email: string) {
+  const handleInvited = (email: string) => {
     setToast({ message: `Invitation envoyée à ${email}`, kind: "success" });
-    // Re-render le Server Component parent pour faire apparaître la nouvelle
-    // invitation dans la table "en attente" sans reload manuel.
-    router.refresh();
-  }
+    // Retardé pour laisser le toast s'afficher avant un éventuel re-mount
+    // déclenché par le refetch du Server Component parent.
+    setTimeout(() => router.refresh(), 1500);
+  };
 
   async function handleCancelInvitation(inv: PendingInvitation) {
     if (!window.confirm(`Annuler l'invitation envoyée à ${inv.email} ?`)) {
