@@ -27,6 +27,7 @@ import * as Sentry from '@sentry/nextjs'
 import { analyzeCall, estimateCostEur, ANALYSIS_MODEL } from '@/lib/claude'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
+import type { AiProfileData } from '@/lib/validations'
 import {
   apiLimiter,
   checkRateLimit,
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
   // que la page détail saura reconnaître pour afficher la bannière upgrade.
   const { data: org } = await supabase
     .from('organizations')
-    .select('subscription_status, subscription_plan')
+    .select('subscription_status, subscription_plan, ai_profile')
     .eq('id', call.organization_id)
     .single()
 
@@ -108,6 +109,12 @@ export async function POST(req: NextRequest) {
     org?.subscription_status ?? null,
     org?.subscription_plan ?? null,
   )
+
+  // ai_profile est un jsonb → typé `unknown` côté Supabase. On le caste
+  // prudemment ; analyzeCall ne lit que les champs string non-vides et
+  // ignore le reste, donc une forme partielle ou inattendue ne casse rien.
+  const aiProfile =
+    (org?.ai_profile as Partial<AiProfileData> | null | undefined) ?? null
 
   const usageCheck = await checkUsageLimit(call.organization_id, plan)
 
@@ -140,13 +147,21 @@ export async function POST(req: NextRequest) {
   // 3. Passer en "analyzing"
   await supabase.from('calls').update({ status: 'analyzing' }).eq('id', callId)
 
-  // 4. Appel Claude
+  // 4. Appel Claude — on passe aiProfile pour contextualiser le prompt si
+  //    le profil de l'org est rempli. analyzeCall renvoie usedAiProfile=true
+  //    uniquement si au moins un champ non-vide a été injecté.
   let analysis
   let usage
+  let usedAiProfile = false
   try {
-    const result = await analyzeCall(call.transcript_text, segments)
+    const result = await analyzeCall(
+      call.transcript_text,
+      segments,
+      aiProfile as AiProfileData | null,
+    )
     analysis = result.analysis
     usage = result.usage
+    usedAiProfile = result.usedAiProfile
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[analyze] Erreur Claude:', message)
@@ -172,6 +187,7 @@ export async function POST(req: NextRequest) {
       ...analysis,            // score_global, score_discovery, ..., summary, strengths, weaknesses, coaching_advice
       model_used: ANALYSIS_MODEL,
       cost_eur: costEur,
+      used_ai_profile: usedAiProfile,
     })
     .select('id')
     .single()
@@ -210,7 +226,7 @@ export async function POST(req: NextRequest) {
 
   console.log(
     '[analyze] ✅ Analyse OK call:', callId,
-    `score=${analysis.score_global}, tokens=${usage.input_tokens}+${usage.output_tokens}, ${costEur}€`
+    `score=${analysis.score_global}, tokens=${usage.input_tokens}+${usage.output_tokens}, ${costEur}€, profil=${usedAiProfile ? 'oui' : 'non'}`
   )
 
   return NextResponse.json({ success: true, analysisId: inserted.id })

@@ -14,6 +14,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { TranscriptSegment } from './assemblyai'
+import type { AiProfileData } from './validations'
 
 export const ANALYSIS_MODEL = 'claude-haiku-4-5-20251001'
 
@@ -54,6 +55,10 @@ export type AnalyzeCallResult = {
     input_tokens: number
     output_tokens: number
   }
+  // true si le profil IA de l'org contenait au moins un champ non-vide et
+  // a donc été injecté dans le user message. Le caller persiste ce flag
+  // dans analyses.used_ai_profile.
+  usedAiProfile: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -213,19 +218,72 @@ Règles strictes :
 - Note avec exigence : 70 = bon appel solide, 85+ = excellence rare, 50 = moyen, <40 = appel raté.
 - Tu DOIS appeler le tool \`submit_analysis\` une seule fois avec ton analyse complète.`
 
-function buildUserMessage(transcriptText: string, segments: TranscriptSegment[]): string {
+// Mapping clé technique → libellé français affiché dans le bloc CONTEXTE CLIENT.
+// L'ordre des clés ici contrôle l'ordre d'apparition dans le prompt.
+const AI_PROFILE_LABELS: Array<[keyof AiProfileData, string]> = [
+  ['activity', 'Activité'],
+  ['icp', 'Profil client idéal'],
+  ['objections', 'Principales objections rencontrées'],
+  ['offer', 'Offre principale'],
+  ['value_prop', 'Proposition de valeur unique'],
+  ['competitors', 'Concurrents directs'],
+  ['methodology', 'Méthodologie de vente'],
+]
+
+/**
+ * Construit le bloc CONTEXTE CLIENT à injecter AVANT le transcript.
+ *
+ * Retourne null si le profil est null/undefined ou si tous ses champs sont
+ * vides — dans ce cas l'analyse tombe sur un prompt générique (comportement
+ * historique). Seuls les champs non-vides apparaissent dans le bloc, dans
+ * l'ordre de AI_PROFILE_LABELS.
+ */
+function buildContextBlock(aiProfile: AiProfileData | null | undefined): string | null {
+  if (!aiProfile) return null
+
+  const lines: string[] = []
+  for (const [key, label] of AI_PROFILE_LABELS) {
+    const raw = aiProfile[key]
+    const value = typeof raw === 'string' ? raw.trim() : ''
+    if (value.length === 0) continue
+    lines.push(`${label} : ${value}`)
+  }
+
+  if (lines.length === 0) return null
+
+  return `--- CONTEXTE CLIENT ---
+${lines.join('\n')}
+--- FIN CONTEXTE ---
+En tenant compte de ce contexte, analyse l'appel ci-dessous.`
+}
+
+function buildUserMessage(
+  transcriptText: string,
+  segments: TranscriptSegment[],
+  aiProfile?: AiProfileData | null,
+): { message: string; usedAiProfile: boolean } {
   // On donne d'abord les segments diarisés (plus précis pour identifier qui dit quoi)
   // puis fallback sur le texte brut si pas de segments
   const transcriptBlock = segments.length > 0
     ? segments.map((s) => `[${s.speaker}] ${s.text}`).join('\n')
     : transcriptText
 
-  return `Voici le transcript d'un appel commercial à analyser.
+  // Le bloc CONTEXTE est placé AVANT le transcript pour que Claude le lise en
+  // premier — l'instruction "en tenant compte de ce contexte" cadre ensuite
+  // l'analyse du transcript. Le system prompt reste générique (et donc cache-
+  // friendly côté Anthropic) ; le contexte par-org va dans le user message.
+  const contextBlock = buildContextBlock(aiProfile)
+
+  const prefix = contextBlock ? `${contextBlock}\n\n` : ''
+
+  const message = `${prefix}Voici le transcript d'un appel commercial à analyser.
 
 # Transcript (avec speakers)
 ${transcriptBlock}
 
 Analyse cet appel et appelle le tool \`submit_analysis\` avec ton évaluation.`
+
+  return { message, usedAiProfile: contextBlock !== null }
 }
 
 // ---------------------------------------------------------------------------
@@ -234,9 +292,16 @@ Analyse cet appel et appelle le tool \`submit_analysis\` avec ton évaluation.`
 
 export async function analyzeCall(
   transcriptText: string,
-  segments: TranscriptSegment[]
+  segments: TranscriptSegment[],
+  aiProfile?: AiProfileData | null,
 ): Promise<AnalyzeCallResult> {
   const client = getClient()
+
+  const { message, usedAiProfile } = buildUserMessage(
+    transcriptText,
+    segments,
+    aiProfile,
+  )
 
   const response = await client.messages.create({
     model: ANALYSIS_MODEL,
@@ -245,9 +310,7 @@ export async function analyzeCall(
     system: SYSTEM_PROMPT,
     tools: [ANALYSIS_TOOL],
     tool_choice: { type: 'tool', name: 'submit_analysis' },
-    messages: [
-      { role: 'user', content: buildUserMessage(transcriptText, segments) },
-    ],
+    messages: [{ role: 'user', content: message }],
   })
 
   const toolUseBlock = response.content.find(
@@ -266,6 +329,7 @@ export async function analyzeCall(
       input_tokens: response.usage.input_tokens,
       output_tokens: response.usage.output_tokens,
     },
+    usedAiProfile,
   }
 }
 
