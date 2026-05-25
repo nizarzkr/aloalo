@@ -1,6 +1,9 @@
 export type MockTranscript = {
   id: string
   title: string
+  // Phrase courte affichée sous le titre sur /dev/test pour expliquer le
+  // scénario joué (pitch, objections principales, type de closing).
+  description: string
   duration_seconds: number
   caller_number: string
   callee_number: string
@@ -13,10 +16,230 @@ export type MockTranscript = {
   }>
 }
 
+// ---------------------------------------------------------------------------
+// buildScenario — convertit une liste de tours [{ speaker, text }] en un
+// MockTranscript complet. Les timestamps sont calculés à partir de la longueur
+// de chaque texte. CHARS_PER_SEC=10 reflète la vitesse réelle d'un appel
+// commercial transcrit, qui inclut les silences et hésitations entre les mots
+// (le texte transcrit en strip les "euh...", mais la durée réelle, elle, les
+// inclut). GAP_MS=800 modélise le temps moyen entre la fin d'une intervention
+// et la réponse de l'autre speaker. Utilisé pour les scénarios longs (J14).
+// ---------------------------------------------------------------------------
+function buildScenario(opts: {
+  id: string
+  title: string
+  description: string
+  caller_number: string
+  callee_number: string
+  turns: Array<{ speaker: 'A' | 'B'; text: string }>
+}): MockTranscript {
+  const CHARS_PER_SEC = 10
+  const GAP_MS = 800
+  let cursor = 0
+  const segments = opts.turns.map((t) => {
+    const dur = Math.max(2000, Math.round((t.text.length / CHARS_PER_SEC) * 1000))
+    const start = cursor
+    const end = start + dur
+    cursor = end + GAP_MS
+    return { speaker: t.speaker, text: t.text, start, end }
+  })
+  const text = opts.turns.map((t) => t.text).join('\n')
+  const lastEnd = segments[segments.length - 1]?.end ?? 0
+  return {
+    id: opts.id,
+    title: opts.title,
+    description: opts.description,
+    caller_number: opts.caller_number,
+    callee_number: opts.callee_number,
+    duration_seconds: Math.round(lastEnd / 1000),
+    text,
+    segments,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scénario A — Flowly vs Monday (l'indécis · closing par démo planifiée)
+// Prospect : Julien Berton, directeur de production, agence L'Atelier 109.
+// Utilise Monday depuis 2 ans, pas mécontent. Le commercial pivote sur la
+// facturation native (vs Zapier) et obtient une démo technique mardi 14h.
+// ---------------------------------------------------------------------------
+const FLOWLY_SCENARIO_A: MockTranscript = buildScenario({
+  id: 'mock-4',
+  title: 'Flowly · L\'indécis Monday (démo planifiée)',
+  description: 'Flowly vs Monday · prospect convaincu de Monday · pivot sur facturation native · démo technique mardi 14h.',
+  caller_number: '+33612009988',
+  callee_number: '+33178223344',
+  turns: [
+    { speaker: 'A', text: "Bonjour Julien, Camille de Flowly. On s'est échangé sur LinkedIn la semaine dernière à propos de votre stack outils. Je vous appelle comme convenu, vous avez bien réservé 30 minutes ?" },
+    { speaker: 'B', text: "Oui bonjour Camille. Oui j'ai bien le créneau, allez-y." },
+    { speaker: 'A', text: "Super, merci. Pour qu'on soit efficaces, j'aimerais commencer par bien comprendre votre quotidien avant de vous présenter quoi que ce soit. Vous m'aviez dit qu'à L'Atelier 109 vous êtes 12, c'est ça ?" },
+    { speaker: 'B', text: "Exact, 12 personnes. On a 8 créas — direction artistique, motion, dev front — 2 chefs de projet, et 2 sur le commercial et l'administratif. Moi je suis directeur de production." },
+    { speaker: 'A', text: "D'accord. Et concrètement, qui fait quoi sur la gestion des projets clients ? Comment ça circule entre les équipes ?" },
+    { speaker: 'B', text: "Alors les commerciaux ramènent les briefs, les chefs de projet découpent en tâches, et c'est globalement suivi sur un tableau Monday par projet. Chaque créa retrouve ses tâches dans son onglet personnel." },
+    { speaker: 'A', text: "Et Monday, vous l'utilisez depuis combien de temps ?" },
+    { speaker: 'B', text: "Deux ans à peu près. Avant on était sur Trello mais c'était trop léger quand on est passés les 8 personnes. On est basculés sur Monday et globalement on est plutôt contents pour être franc." },
+    { speaker: 'A', text: "OK, donc Monday tient bien la route sur la coordination interne. Et côté facturation client, comment ça se passe ?" },
+    { speaker: 'B', text: "Ah ça c'est plus compliqué. On a Pennylane pour la compta et la facturation. Entre Monday et Pennylane c'est mon assistante qui ressaisit. Elle ressort les heures pointées dans Monday, elle fait un Excel par client, et après elle saisit les factures dans Pennylane." },
+    { speaker: 'A', text: "Et concrètement, combien de temps elle passe sur ce process chaque semaine, votre assistante ?" },
+    { speaker: 'B', text: "Facilement une journée et demie. Donc environ 6 jours par mois. C'est presque 25% de son temps total." },
+    { speaker: 'A', text: "Une journée et demie par semaine sur de la double saisie. Et vous, ça vous gêne particulièrement ?" },
+    { speaker: 'B', text: "Honnêtement oui, deux choses. D'abord c'est de l'admin pur, on paye une personne à recopier des chiffres d'un outil à l'autre. Et deuxième chose, je suis sûr qu'on perd des heures dans la nature. Les créas ne pointent pas tous les jours, ils rattrapent le vendredi, et là forcément il y a du flou." },
+    { speaker: 'A', text: "OK. Donc deux douleurs claires : l'admin chronophage, et le risque de perdre des heures non facturées. Et si je vous demande de chiffrer, vous perdez combien d'heures par mois à votre avis ?" },
+    { speaker: 'B', text: "Difficile à dire précisément... Je dirais 10 à 15% des heures réellement faites qui partent à la poubelle. Sur 12 personnes à 35h, c'est facile 70 heures qui ne sont jamais facturées chaque mois." },
+    { speaker: 'A', text: "70 heures par mois. À combien vous facturez l'heure créa en moyenne ?" },
+    { speaker: 'B', text: "95 euros HT." },
+    { speaker: 'A', text: "Donc on parle de 6 600 euros par mois de chiffre d'affaires qui s'évapore. Quasiment 80 000 euros par an." },
+    { speaker: 'B', text: "Oui... formulé comme ça c'est moins joli." },
+    { speaker: 'A', text: "C'est exactement le sujet sur lequel Flowly est positionné. Est-ce que je peux vous montrer rapidement comment on attaque ce problème ?" },
+    { speaker: 'B', text: "Allez-y, mais soyons honnêtes, je suis pas mécontent de Monday, donc il faut vraiment me convaincre." },
+    { speaker: 'A', text: "Très bien. En une phrase, Flowly est un outil de gestion de projets fait pour les agences créatives, et la différence majeure avec Monday c'est qu'on a la facturation client native, pas via une intégration tierce. Quand un créa pointe une heure, elle est automatiquement rangée dans une feuille de facturation par client, vous validez en fin de mois, et la facture part vers Pennylane." },
+    { speaker: 'B', text: "Donc plus besoin de Pennylane ?" },
+    { speaker: 'A', text: "Pennylane reste votre compta générale, on synchronise avec eux automatiquement. Mais c'est zéro double saisie. Votre assistante récupère sa journée et demie par semaine." },
+    { speaker: 'B', text: "Hmm. Mais Monday a des intégrations Zapier non, on peut faire la même chose en branchant Monday sur Pennylane ?" },
+    { speaker: 'A', text: "Excellente question, c'est l'objection numéro un qu'on entend. Zapier permet la connexion, oui, mais en pratique vous avez trois problèmes. Un, la latence : les Zaps tournent toutes les 15 minutes au mieux, donc le pointage n'est jamais temps réel. Deux, si Monday n'a pas un champ \"facturable / non facturable\" propre par tâche, vous devez quand même faire un tri manuel avant l'export. Et trois, si un Zap plante au milieu du mois, vous découvrez le bug le jour où vous voulez facturer." },
+    { speaker: 'B', text: "C'est vrai qu'on a déjà eu des Zaps qui sautaient sans qu'on s'en rende compte... OK ce point là je l'achète." },
+    { speaker: 'A', text: "Et chez Flowly tout est natif, donc pas de Zapier à maintenir, pas de cassures silencieuses, et le pointage est en temps réel." },
+    { speaker: 'B', text: "D'accord. Maintenant l'autre sujet, c'est qu'on a habitué l'équipe à Monday depuis deux ans. Changer d'outil c'est jamais une partie de plaisir." },
+    { speaker: 'A', text: "Question hyper légitime, c'est typiquement la deuxième objection qu'on traite. Concrètement la transition c'est trois choses : un, on importe automatiquement tous vos projets Monday en cours via leur API, vous gardez l'historique complet. Deux, on forme votre équipe en deux sessions d'une heure sur Zoom. Trois, j'ai un chef de projet Flowly qui reste à votre disposition pendant 5 jours pour répondre à toutes les questions de l'équipe en temps réel." },
+    { speaker: 'B', text: "Cinq jours dédiés, c'est confortable. Mais pendant ces cinq jours, on continue à bosser comment ? On peut pas se permettre de bloquer les sprints clients en cours." },
+    { speaker: 'A', text: "Justement. Pendant la migration on garde Monday en parallèle, vous coupez uniquement quand vous êtes confiants. Pendant deux à trois semaines vos équipes peuvent même continuer à pointer dans Monday si elles préfèrent, on resync. La bascule définitive se fait en douceur, pas en mode big bang." },
+    { speaker: 'B', text: "OK ça me rassure. Et niveau prix ?" },
+    { speaker: 'A', text: "89 euros par utilisateur et par mois, sans engagement de durée. Pour 12 personnes ça fait 1068 euros mensuels hors taxes. Et avec un engagement annuel vous avez 15% de remise, donc l'équivalent de 907 euros mensuels." },
+    { speaker: 'B', text: "D'accord. C'est dans la fourchette que j'avais en tête, ça représente moins d'un sixième de ce qu'on perd actuellement en facturation. Reste à valider techniquement." },
+    { speaker: 'A', text: "C'est exactement ce que je vous propose. Je vais bloquer une démo technique avec Mathieu, mon chef de projet senior, qui pourra vous montrer concrètement l'import d'un de vos projets Monday et la facturation associée en direct. Vous préférez plutôt mardi ou jeudi la semaine prochaine ?" },
+    { speaker: 'B', text: "Plutôt mardi, jeudi je suis chez un client toute la journée." },
+    { speaker: 'A', text: "Mardi 14h heure de Paris, ça vous va ?" },
+    { speaker: 'B', text: "Mardi 14h... laissez-moi vérifier... oui c'est bon, je bloque le créneau." },
+    { speaker: 'A', text: "Parfait. Je vous envoie l'invitation Google Meet dans l'heure. Et juste avant la démo, je vous demanderai par mail le nom d'un projet Monday en cours que vous voulez voir importé en démo, comme ça Mathieu vous le montre sur de la donnée réelle, pas une fixture." },
+    { speaker: 'B', text: "OK super, je vous enverrai un projet client lambda. Merci Camille." },
+    { speaker: 'A', text: "Avec plaisir Julien. À mardi alors." },
+    { speaker: 'B', text: "À mardi." },
+  ],
+})
+
+// ---------------------------------------------------------------------------
+// Scénario B — Flowly · le price-sensitive (validation associé · KO ouvert)
+// Prospect : Sarah Dumas, directrice agence Atelier Mira (12 personnes).
+// Convaincue produit, bloque sur le prix mensuel. Le commercial chiffre le
+// ROI via les heures non facturables, propose le paiement annuel -15%, mais
+// la prospect doit valider avec son associé Frank jeudi. Closing négatif
+// mais porte ouverte : doc PDF chiffré envoyé pour préparer la réunion.
+// ---------------------------------------------------------------------------
+const FLOWLY_SCENARIO_B: MockTranscript = buildScenario({
+  id: 'mock-5',
+  title: 'Flowly · Le price-sensitive (KO mais ouverte)',
+  description: 'Flowly · agence 12p · prix bloque (1068€/mois) · ROI chiffré · validation associé jeudi · porte ouverte.',
+  caller_number: '+33687554433',
+  callee_number: '+33145887766',
+  turns: [
+    { speaker: 'A', text: "Bonjour Sarah, Camille de Flowly. Ravie de vous retrouver. Comme on s'était dit, j'ai bloqué 30 minutes pour qu'on aille au fond du sujet aujourd'hui. Vous avez bien le créneau ?" },
+    { speaker: 'B', text: "Bonjour Camille. Oui c'est bon, je suis devant l'ordi." },
+    { speaker: 'A', text: "Parfait. Petit rappel rapide pour qu'on soit calées, et puis je rentre dans le concret. La semaine dernière on s'était parlé pendant 45 minutes, vous m'aviez expliqué que chez Atelier Mira vous êtes 12, vous gérez environ 25 clients actifs, et que vos deux gros points de friction c'étaient d'un côté la facturation client qui prend des plombes chaque mois, et de l'autre le manque de visibilité temps réel sur la rentabilité projet. C'est bien ça ?" },
+    { speaker: 'B', text: "Oui parfait, vous avez bien retenu. Rien à ajouter." },
+    { speaker: 'A', text: "Top. Aujourd'hui ce que je vous propose c'est : je vous montre 10 minutes de l'interface en mode démo sur un cas type d'agence, on regarde concrètement comment se passe le pointage et la facturation, et après je vous donne toutes les conditions commerciales pour que vous puissiez décider en interne. Ça vous va ?" },
+    { speaker: 'B', text: "Allez-y, je vous suis." },
+    { speaker: 'A', text: "Donc voilà l'écran d'accueil d'un compte type. Vous voyez ici en haut le pipeline des projets en cours, classés par échéance. Chaque projet a une marge prévisionnelle calculée en temps réel à partir du devis initial et des heures pointées depuis le début. Là par exemple, ce projet en rouge, il a déjà consommé 110% du budget heures prévu, donc l'agence est en train de perdre de l'argent dessus en ce moment même." },
+    { speaker: 'B', text: "Hmm. Et le créa il voit ça aussi en rouge ?" },
+    { speaker: 'A', text: "Le créa voit son propre temps passé sur sa tâche, oui. Le code couleur global de rentabilité n'est visible que par les chefs de projet et la direction. Vous configurez ça dans les rôles, granulaire." },
+    { speaker: 'B', text: "OK ça me plaît. On a régulièrement des projets qui dérivent sans qu'on s'en rende compte avant la facture finale. Là on aurait pu réagir avant." },
+    { speaker: 'A', text: "C'est typique. Et ici, en deux clics, on passe sur la vue facturation mensuelle. Vous voyez toutes les heures pointées du mois, regroupées par client, prêtes à être facturées. Vous validez, et la facture part automatiquement vers Pennylane. Plus de tableau Excel intermédiaire, plus de double saisie." },
+    { speaker: 'B', text: "D'accord. Ça c'est très clair. Et niveau prix vous m'aviez parlé de 89 euros, c'est bien ça ?" },
+    { speaker: 'A', text: "89 euros par utilisateur et par mois, sans engagement de durée. Pour 12 personnes ça fait 1068 euros mensuels hors taxes." },
+    { speaker: 'B', text: "1068... [silence] honnêtement Camille, c'est plus que ce que j'imaginais. On est sur un budget outils qui doit tenir dans une enveloppe annuelle, et là on parle de plus de 12 000 euros par an. Mon comptable va me regarder bizarrement." },
+    { speaker: 'A', text: "Je comprends, et c'est important qu'on parle franchement de ce point. Avant de défendre le prix, est-ce qu'on peut chiffrer ensemble ce que vous perdez aujourd'hui sur ces deux sujets ? Vous m'aviez dit la semaine dernière que votre assistante passe environ une journée par semaine sur la facturation manuelle." },
+    { speaker: 'B', text: "Oui, environ 7 à 8 heures par semaine, c'est ça." },
+    { speaker: 'A', text: "Et le pointage des heures par vos créas, à quel point c'est précis ?" },
+    { speaker: 'B', text: "Pour être totalement honnête, c'est très approximatif. On a tous tendance à arrondir, à oublier de pointer les petites corrections d'une heure ici ou là, les coups de fil au téléphone avec un client qui durent 20 minutes." },
+    { speaker: 'A', text: "Vous avez une estimation des heures réellement effectuées mais non facturées chaque mois, sur l'ensemble de l'équipe ?" },
+    { speaker: 'B', text: "Je dirais entre 60 et 80 heures par mois en cumulé. Peut-être plus en réalité, mais disons 70 heures de moyenne." },
+    { speaker: 'A', text: "70 heures par mois. À combien vous facturez l'heure créa en moyenne, tous profils confondus ?" },
+    { speaker: 'B', text: "100 euros HT en moyenne, ça dépend des profils. Les seniors sont à 120, les juniors à 80, mais le mix donne autour de 100." },
+    { speaker: 'A', text: "Donc 7 000 euros de chiffre d'affaires qui n'arrive pas dans vos comptes, chaque mois." },
+    { speaker: 'B', text: "Oui, mais c'est aussi qu'on a tendance à pas refacturer certaines reprises mineures aux clients, ça fait partie du jeu de l'agence." },
+    { speaker: 'A', text: "Bien sûr, et c'est sain. Mais admettons qu'on récupère uniquement 30% de ces heures perdues : ça fait 21 heures par mois facturables en plus, soit 2 100 euros mensuels de revenus retrouvés. Et la journée de votre assistante qu'on libère, vous la convertissez en quoi côté business ?" },
+    { speaker: 'B', text: "Elle a déjà plein d'autres trucs à faire pour moi côté commercial, donc oui ce serait du temps utile, pas du temps perdu." },
+    { speaker: 'A', text: "Donc le ROI brut est très clair : 1068 euros de coût mensuel face à 2 100 euros minimum de récupération de chiffre d'affaires, plus le temps libéré de votre assistante. Vous êtes positif dès le premier mois sur l'investissement, et le ROI augmente avec le temps puisque la précision du pointage s'améliore." },
+    { speaker: 'B', text: "Sur le papier oui, je le vois. Le problème c'est pas vraiment le ROI à un an, c'est plus le cash flow ici et maintenant. Sortir 1068 euros tous les mois en plus c'est un engagement de plus dans une période où on en a déjà beaucoup." },
+    { speaker: 'A', text: "Question légitime, c'est typiquement le sujet qu'on entend en deuxième vague d'objection. On a deux options pour aider sur ce point. Soit on part sur du mensuel sans engagement, comme je vous ai présenté. Soit on part sur l'annuel, et là vous bénéficiez de 15% de remise immédiate, donc on est plutôt à 907 euros mensuels équivalents, mais payés en une fois en début d'année." },
+    { speaker: 'B', text: "15% c'est intéressant. Bon écoutez, vraiment, c'est très intéressant ce que vous me montrez. Mais sur un engagement comme celui-là, je ne peux pas décider seule, il faut absolument que je voie avec mon associé Frank avant de signer quoi que ce soit." },
+    { speaker: 'A', text: "Bien sûr, c'est tout à fait normal, on est sur un sujet stratégique. Frank, il a quel angle sur l'outillage de l'agence d'habitude ? C'est plutôt lui qui pousse l'innovation, ou plutôt celui qui freine ?" },
+    { speaker: 'B', text: "Plutôt prudent disons. Il est très ROI, il aime les chiffres précis, il déteste les engagements pas justifiés." },
+    { speaker: 'A', text: "Quand est-ce que vous le voyez la prochaine fois ?" },
+    { speaker: 'B', text: "On a notre point hebdo jeudi, en fin de matinée." },
+    { speaker: 'A', text: "OK. Ce que je vous propose pour vous aider à porter le sujet : je vous prépare un document récapitulatif pour ce soir, avec le détail de l'offre, et un mini-calcul de ROI personnalisé Atelier Mira basé sur les chiffres exacts que vous m'avez donnés aujourd'hui. Comme ça Frank a tous les éléments factuels pour la conversation jeudi." },
+    { speaker: 'B', text: "Ah ça serait parfait. Avec un truc sur une page si possible, il déteste les pavés." },
+    { speaker: 'A', text: "Une page maximum, c'est noté. Et si Frank a une question technique précise pendant votre conversation jeudi, n'hésitez pas à me le faire suivre directement par mail, je peux y répondre dans la journée pour ne pas vous bloquer si la conversation avance bien." },
+    { speaker: 'B', text: "Super, c'est noté." },
+    { speaker: 'A', text: "Et juste pour qu'on cale les attentes côté timing : si jeudi soir c'est un go, je peux démarrer l'onboarding dès la semaine d'après, et vous seriez facturé à partir de mai. Donc même dans ce scénario positif, votre première mensualité tombe fin mai. Ça vous donne environ 6 semaines de visibilité sur votre cash flow." },
+    { speaker: 'B', text: "D'accord, c'est correct comme timing." },
+    { speaker: 'A', text: "Et si la réponse est non, ou pas tout de suite, ça reste évidemment ouvert. Je vous rappelle en novembre quand vos chiffres du troisième trimestre sont stabilisés, ça vous va comme deal ?" },
+    { speaker: 'B', text: "Oui c'est tout à fait correct. Merci Camille en tout cas, c'était utile cet échange." },
+    { speaker: 'A', text: "Merci à vous Sarah, à très vite alors." },
+    { speaker: 'B', text: "À très vite, bonne fin de journée." },
+  ],
+})
+
+// ---------------------------------------------------------------------------
+// Scénario C — Flowly · deal chaud · migration Notion+Trello (closing positif)
+// Prospect : Mehdi Khelifa, COO Studio Brava (18 personnes). Convaincu produit,
+// bloqué uniquement sur la peur de la migration depuis 3 ans de docs Notion +
+// 25 tableaux Trello actifs. Le commercial rassure méthodiquement sur les 5
+// jours d'accompagnement + migration parallèle 30 jours + formation 2x1h, et
+// obtient une signature DocuSign le jour même.
+// ---------------------------------------------------------------------------
+const FLOWLY_SCENARIO_C: MockTranscript = buildScenario({
+  id: 'mock-6',
+  title: 'Flowly · Deal chaud · migration Notion+Trello (closing)',
+  description: 'Flowly · COO 18p prêt à signer mais stress migration · 5j accompagnement + parallèle 30j · DocuSign envoyé.',
+  caller_number: '+33623998877',
+  callee_number: '+33189665544',
+  turns: [
+    { speaker: 'A', text: "Bonjour Mehdi, Camille de Flowly. Comment allez-vous ?" },
+    { speaker: 'B', text: "Très bien Camille, et vous ?" },
+    { speaker: 'A', text: "Au top, merci. Bon, on est rendus au quatrième échange tous les deux, et la dernière fois vous m'avez dit qu'on touchait à la décision. Où est-ce qu'on en est de votre côté ?" },
+    { speaker: 'B', text: "Justement, c'est pour ça que je voulais qu'on se reparle de vive voix aujourd'hui. On est convaincus. Honnêtement vous avez coché toutes nos cases côté produit. Le sponsor au comité de direction la semaine dernière, ça s'est très bien passé, on a le go côté budget et côté gouvernance." },
+    { speaker: 'A', text: "C'est une excellente nouvelle, merci Mehdi pour le travail de portage interne que vous avez fait là-dessus. Je sais que c'est jamais une mince affaire de défendre un nouvel outil en comité de direction." },
+    { speaker: 'B', text: "Pas de quoi. Mais il y a une chose qui me bloque vraiment, et je veux qu'on en parle aujourd'hui avant que je signe quoi que ce soit." },
+    { speaker: 'A', text: "Allez-y, je vous écoute. Pour autant on touche à la fin, c'est important qu'on évacue cette friction." },
+    { speaker: 'B', text: "On est sur Notion depuis maintenant trois ans pour toute la documentation projet, et sur Trello depuis bien plus longtemps que ça pour le suivi des kanbans clients au quotidien. On a un historique conséquent. Si on migre vers Flowly et que ça se passe mal, on perd notre opérationnel pendant des semaines. Et chez Studio Brava on est en plein milieu de deux gros sprints clients en parallèle là, on n'a vraiment pas le luxe de s'arrêter ne serait-ce qu'une semaine." },
+    { speaker: 'A', text: "C'est une crainte tout à fait légitime, et c'est honnêtement le sujet numéro un qu'on traite avec toutes les agences de votre taille. Avant de vous expliquer comment on attaque ça concrètement, j'aimerais juste bien cerner le volume. Quand vous dites historique conséquent, vous me parlez de quoi en chiffres ?" },
+    { speaker: 'B', text: "Sur Notion on doit avoir 80 ou 100 pages de documentation projet active, plus les archives, peut-être 300 pages au total avec les workspaces secondaires. Sur Trello on a 25 tableaux clients actifs, avec une moyenne de 40 à 60 cartes par tableau, et des commentaires qui datent parfois de deux ans." },
+    { speaker: 'A', text: "D'accord. Donc on parle d'un volume sérieux mais tout à fait dans la fourchette qu'on a déjà migré pour des clients comparables, agences de 15 à 25 personnes. Je vais vous expliquer concrètement ce qu'on fait. Première chose : Flowly inclut systématiquement 5 jours d'accompagnement migration dans le forfait, sans surcoût. Ces 5 jours sont assurés par un chef de projet dédié de chez nous, qui ne fait que ça à plein temps." },
+    { speaker: 'B', text: "Cinq jours c'est cinq jours ouvrés ou cinq jours étalés sur deux semaines ?" },
+    { speaker: 'A', text: "Cinq jours ouvrés étalés sur les deux à trois premières semaines, calés sur votre rythme. Concrètement la première journée, votre chef de projet Flowly se connecte avec votre interlocuteur référent côté Brava, on fait un audit complet de l'existant ensemble. On regarde tableau par tableau Trello ce qui doit être migré tel quel, ce qui doit être archivé, ce qui doit être réorganisé." },
+    { speaker: 'B', text: "OK. Et techniquement, comment vous récupérez les données ?" },
+    { speaker: 'A', text: "Sur Trello c'est complètement automatique via leur API : on importe vos boards, vos listes, vos cartes, les commentaires, les pièces jointes, et l'historique des dates de modification. Zéro perte d'information, on récupère même les votes et les checklists. Sur Notion c'est moins direct parce que leur API est plus restrictive : on passe par un export Markdown que vous générez en deux clics, et on ré-importe en conservant la structure hiérarchique des pages. Les attachments — images, PDFs, vidéos — passent aussi." },
+    { speaker: 'B', text: "Et les pages Notion avec des databases embarquées ? On a pas mal de tableaux de suivi imbriqués qui sont quand même la colonne vertébrale de notre process." },
+    { speaker: 'A', text: "Très bonne question, c'est typiquement le piège des migrations Notion. Les databases Notion sont importées comme des tables Flowly, avec les colonnes et le contenu intacts. Le seul truc qu'on ne récupère pas, ce sont les relations cross-database très avancées de Notion : type \"rollups\" complexes qui agrègent des données entre plusieurs databases. Mais en général sur une utilisation d'agence, ces fonctionnalités sont marginales, et on les recrée à la main au moment de l'audit." },
+    { speaker: 'B', text: "OK, ça je pourrai vérifier de notre côté, on a une ou deux databases liées mais c'est pas critique. Maintenant l'autre crainte que j'ai, c'est plus opérationnelle. Et si pendant la migration certains projets se perdent ou se déforment dans la conversion ? Comment je m'en rends compte avant qu'un client appelle pour gueuler ?" },
+    { speaker: 'A', text: "C'est exactement pour ça qu'on fait la migration en parallèle, jamais en remplacement direct. Pendant 30 jours, Notion et Trello continuent à tourner intégralement chez vous, vous ne touchez à rien et vos équipes continuent leur quotidien dessus. On importe dans Flowly à côté, en silence, et vous validez tableau par tableau, projet par projet, sur des sessions de relecture avec votre chef de projet Flowly." },
+    { speaker: 'B', text: "Donc je peux pendant 30 jours faire des allers-retours entre les deux outils si besoin sans rien casser ?" },
+    { speaker: 'A', text: "Oui, exactement. Vos équipes peuvent même continuer à créer des cartes sur Trello pendant cette période de validation. À la fin des 30 jours, votre chef de projet Flowly fait un dernier audit avec vous, on synchronise les dernières modifications qui ont eu lieu sur Trello pendant la période — il y en a toujours — et c'est à ce moment-là seulement que vous décidez de basculer définitivement et de couper Trello et Notion." },
+    { speaker: 'B', text: "D'accord. Ça me rassure beaucoup en fait, je m'attendais à ce que ce soit un \"on bascule un jour J et tant pis si ça plante\", c'est ce que j'ai vécu sur une migration outil dans une boîte précédente." },
+    { speaker: 'A', text: "Non, ce serait honnêtement du suicide pour les deux parties. On préfère prendre 30 jours pour bien faire les choses plutôt que de gérer des pertes de données et des clients furieux pendant trois mois après. Maintenant il reste un dernier point sur lequel vous m'aviez questionné la dernière fois : la formation de l'équipe. Vous êtes 18 chez Brava au total, c'est ça ?" },
+    { speaker: 'B', text: "18 oui, dont 14 sont quotidiennement sur Notion ou Trello." },
+    { speaker: 'A', text: "Ce qu'on propose pour la formation, c'est deux sessions d'une heure en live sur Google Meet. Une session pour les chefs de projet et la direction sur les fonctionnalités avancées et le reporting, et une session pour les contributeurs sur la prise en main quotidienne. Et en complément, on a une bibliothèque de 25 micro-tutos vidéo de 2 à 3 minutes chacun, que les gens regardent à leur rythme dans l'app." },
+    { speaker: 'B', text: "Et si quelqu'un a une question pratique pendant les premières semaines, ils contactent qui ?" },
+    { speaker: 'A', text: "Le chef de projet Flowly migration reste disponible par Slack ou mail pendant toute la phase d'accompagnement, donc 5 jours étalés, tout est questionnable et il répond dans l'heure typiquement. Et après cette période, vous passez sur le support standard, accessible par chat dans l'app, avec un SLA de réponse de 4 heures ouvrées dans le pire cas." },
+    { speaker: 'B', text: "4 heures c'est correct pour notre usage. Bon écoutez Camille, là vous m'avez rassuré sur tous les points que j'avais en tête. Sincèrement." },
+    { speaker: 'A', text: "Merci Mehdi, c'est l'objectif. Donc concrètement, où en est-on côté contractuel ? Vous m'aviez dit la semaine dernière que vous attaqueriez la signature dès qu'on aurait levé ces points-là." },
+    { speaker: 'B', text: "Oui, je suis prêt. Vous pouvez m'envoyer le contrat ?" },
+    { speaker: 'A', text: "Avec grand plaisir. Je vous envoie un DocuSign dans l'heure, vous serez 18 utilisateurs à 89 euros, donc 1602 euros mensuels hors taxes. Engagement annuel pour bénéficier des 15% de remise, ce qui vous met à 1361 euros équivalent mensuel, payable en une fois en début d'année, comme convenu la semaine dernière." },
+    { speaker: 'B', text: "Oui c'est exactement l'option qu'on avait validée. Allez-y, envoyez." },
+    { speaker: 'A', text: "Parfait. Une fois la signature électronique reçue de votre côté, je vous mets en contact par mail avec Léa, votre chef de projet Flowly migration, qui prendra rendez-vous avec vous pour caler le kickoff. L'idée serait de démarrer la phase d'audit lundi prochain, est-ce que ça vous va comme timing ?" },
+    { speaker: 'B', text: "Lundi c'est tout à fait bon. Je suis là toute la matinée." },
+    { speaker: 'A', text: "Top. Léa vous proposera deux créneaux possibles sur lundi pour faire le kickoff. Vous lui dites celui qui vous arrange, et on cale." },
+    { speaker: 'B', text: "OK super. Merci Camille, c'était vraiment bien mené tout cet échange. Je signe dans la journée, vous aurez ça avant 18h." },
+    { speaker: 'A', text: "C'est moi qui vous remercie Mehdi, on est vraiment ravis de vous embarquer chez Brava. À très vite alors." },
+    { speaker: 'B', text: "À très vite." },
+  ],
+})
+
 export const MOCK_TRANSCRIPTS: MockTranscript[] = [
   {
     id: 'mock-1',
     title: 'Appel avec objection prix — PME logistique',
+    description: 'Aloalo vs TransLog · objection budget gérée par discovery ROI · closing par démo planifiée mardi 10h.',
     duration_seconds: 312,
     caller_number: '+33612345678',
     callee_number: '+33145678901',
@@ -58,6 +281,7 @@ Mardi 10h c'est parfait.`,
   {
     id: 'mock-2',
     title: 'Appel raté — mauvaise qualification',
+    description: 'Cold call sans découverte · pitch générique · prospect sur Teams · closing négatif sec.',
     duration_seconds: 198,
     caller_number: '+33687654321',
     callee_number: '+33156789012',
@@ -93,6 +317,7 @@ D'accord, bonne journée.`,
   {
     id: 'mock-3',
     title: 'Appel excellent — closing réussi',
+    description: 'Inbound LinkedIn · discovery quantifiée 60-80K€/an · pitch tarif aligné · essai gratuit démarré.',
     duration_seconds: 425,
     caller_number: '+33698765432',
     callee_number: '+33167890123',
@@ -134,5 +359,8 @@ Parfait, j'attends votre mail.`,
       { speaker: 'A', text: "Tout à fait. Je vous envoie le lien d'inscription dans la foulée, et je vous propose un point de suivi jeudi pour voir les premiers résultats. Ça vous va ?", start: 170500, end: 183000 },
       { speaker: 'B', text: "Parfait, j'attends votre mail.", start: 183500, end: 187000 },
     ]
-  }
+  },
+  FLOWLY_SCENARIO_A,
+  FLOWLY_SCENARIO_B,
+  FLOWLY_SCENARIO_C,
 ]

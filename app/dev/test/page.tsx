@@ -55,7 +55,7 @@ export default function DevTestPage() {
         <div className="mb-2 inline-block bg-yellow-500 text-black text-xs font-bold px-2 py-1 rounded">
           DEV ONLY
         </div>
-        <h1 className="text-2xl font-bold mb-1">Simulateur d'appels</h1>
+        <h1 className="text-2xl font-bold mb-1">Simulateur d&apos;appels</h1>
         <p className="text-gray-400 mb-8 text-sm">
           Déclenche un faux appel Ringover → le webhook reçoit le payload → un enregistrement est créé en base.
         </p>
@@ -69,18 +69,21 @@ export default function DevTestPage() {
               disabled={loading !== null}
               className="w-full text-left p-4 rounded-lg border border-gray-700 bg-gray-900 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
                   <div className="font-medium text-sm">{transcript.title}</div>
-                  <div className="text-gray-500 text-xs mt-1">
+                  <div className="text-gray-400 text-xs mt-1 leading-relaxed">
+                    {transcript.description}
+                  </div>
+                  <div className="text-gray-500 text-xs mt-2">
                     {Math.floor(transcript.duration_seconds / 60)} min {transcript.duration_seconds % 60}s
                     · {transcript.segments.length} répliques
                   </div>
                 </div>
                 {loading === index ? (
-                  <div className="text-yellow-400 text-sm animate-pulse">En cours…</div>
+                  <div className="text-yellow-400 text-sm animate-pulse shrink-0">En cours…</div>
                 ) : (
-                  <div className="text-blue-400 text-sm">▶ Simuler</div>
+                  <div className="text-blue-400 text-sm shrink-0">▶ Simuler</div>
                 )}
               </div>
             </button>

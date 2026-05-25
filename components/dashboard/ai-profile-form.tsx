@@ -51,6 +51,35 @@ function s(value: string | null | undefined): string {
   return value ?? "";
 }
 
+// Hoisted en top-level : ESLint react-hooks interdit de déclarer un composant
+// à l'intérieur d'un autre (chaque render recrée la fonction, et toute state
+// interne serait perdue). Affiche la ligne label + compteur "X / MAX_LEN".
+function FieldHeader({
+  htmlFor,
+  label,
+  value,
+}: {
+  htmlFor: string;
+  label: string;
+  value: string;
+}) {
+  const len = value.length;
+  const atLimit = len >= MAX_LEN;
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      <span
+        className={cn(
+          "text-xs tabular-nums",
+          atLimit ? "text-destructive" : "text-muted-foreground",
+        )}
+      >
+        {len} / {MAX_LEN}
+      </span>
+    </div>
+  );
+}
+
 export function AiProfileForm({ defaultValues, canEdit }: Props) {
   const [state, formAction, pending] = useActionState<
     UpdateOrgResult | null,
@@ -76,32 +105,6 @@ export function AiProfileForm({ defaultValues, canEdit }: Props) {
     (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
       setValues((prev) => ({ ...prev, [key]: e.target.value }));
     };
-
-  // Petit composant interne pour ne pas dupliquer la ligne label+compteur
-  // sous chaque champ.
-  function FieldHeader({ htmlFor, label, value }: {
-    htmlFor: string;
-    label: string;
-    value: string;
-  }) {
-    const len = value.length;
-    // Le maxLength HTML empêche normalement de dépasser, mais on garde un
-    // état visuel "limite atteinte" dès qu'on touche 1000.
-    const atLimit = len >= MAX_LEN;
-    return (
-      <div className="flex items-center justify-between gap-2">
-        <Label htmlFor={htmlFor}>{label}</Label>
-        <span
-          className={cn(
-            "text-xs tabular-nums",
-            atLimit ? "text-destructive" : "text-muted-foreground",
-          )}
-        >
-          {len} / {MAX_LEN}
-        </span>
-      </div>
-    );
-  }
 
   return (
     <form action={formAction} className="space-y-5">
