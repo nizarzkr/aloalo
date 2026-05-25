@@ -120,6 +120,43 @@ export const AiProfileSchema = z.object({
 export type AiProfileData = z.infer<typeof AiProfileSchema>
 
 // ---------------------------------------------------------------------------
+// HubspotSettingsSchema — Server Action updateHubspotSettings (J15)
+// ---------------------------------------------------------------------------
+// Deux champs, tous deux OPTIONNELS :
+//  - hubspot_token : le « Private App token » du client. Vide → null (l'owner
+//    n'écrase pas le token existant, comme pour la clé Ringover). Sinon : non
+//    vide, max 200 chars, pas d'espace interne (les vrais tokens sont de la
+//    forme `pat-eu1-xxxx`). On reste souple sur le format exact.
+//  - hubspot_portal_id : le « Hub ID » du portail. Identifiant numérique côté
+//    HubSpot. Vide → null. Sinon : chiffres uniquement, max 20 chars.
+export const HubspotSettingsSchema = z.object({
+  hubspot_token: z
+    .union([
+      z.literal(''),
+      z
+        .string()
+        .trim()
+        .max(200, 'token trop long (max 200 caractères)')
+        .regex(/^\S+$/, 'le token ne doit pas contenir d\'espaces'),
+    ])
+    .optional()
+    .transform((v) => (v && v !== '' ? v : null)),
+  hubspot_portal_id: z
+    .union([
+      z.literal(''),
+      z
+        .string()
+        .trim()
+        .max(20, 'Portal ID trop long')
+        .regex(/^\d+$/, 'le Portal ID ne contient que des chiffres'),
+    ])
+    .optional()
+    .transform((v) => (v && v !== '' ? v : null)),
+})
+
+export type HubspotSettingsInput = z.infer<typeof HubspotSettingsSchema>
+
+// ---------------------------------------------------------------------------
 // RingoverWebhookSchema — POST /api/webhooks/ringover
 // ---------------------------------------------------------------------------
 // Forme réelle du payload Ringover (et notre fixture de simulation) :

@@ -18,6 +18,7 @@ import { redirect } from "next/navigation";
 import { AiProfileForm } from "@/components/dashboard/ai-profile-form";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { DeleteAccountDialog } from "@/components/dashboard/delete-account-dialog";
+import { HubspotSettingsForm } from "@/components/dashboard/hubspot-settings-form";
 import { OrgSettingsForm } from "@/components/dashboard/org-settings-form";
 import { RingoverKeyForm } from "@/components/dashboard/ringover-key-form";
 import { Badge } from "@/components/ui/badge";
@@ -54,7 +55,9 @@ export default async function SettingsPage() {
       .single(),
     supabase
       .from("organizations")
-      .select("id, name, logo_url, ringover_api_key, ai_profile")
+      .select(
+        "id, name, logo_url, ringover_api_key, ai_profile, hubspot_token, hubspot_portal_id",
+      )
       .maybeSingle(),
   ]);
 
@@ -62,6 +65,11 @@ export default async function SettingsPage() {
   const hasRingoverKey = Boolean(
     org?.ringover_api_key && org.ringover_api_key.length > 0,
   );
+  // Comme pour Ringover : on ne lit que la PRÉSENCE du token, jamais sa valeur.
+  const hasHubspotToken = Boolean(
+    org?.hubspot_token && org.hubspot_token.length > 0,
+  );
+  const hubspotPortalId = org?.hubspot_portal_id ?? "";
   // ai_profile est un jsonb en DB → `unknown` côté TS. On le caste prudemment
   // en Partial<AiProfileData> ; le composant supporte les clés manquantes.
   const aiProfile =
@@ -231,7 +239,51 @@ export default async function SettingsPage() {
       </Card>
 
       {/* ---------------------------------------------------------------- */}
-      {/* 5. Zone danger                                                    */}
+      {/* 5. Intégration HubSpot (owner uniquement — touche un secret)      */}
+      {/* ---------------------------------------------------------------- */}
+      {isOwner ? (
+        <Card className="mt-8">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>HubSpot</CardTitle>
+                <CardDescription>
+                  Connectez votre CRM HubSpot pour enrichir les fiches contacts
+                  avec les analyses d&apos;appels.
+                </CardDescription>
+              </div>
+              {/* Badge persistant : reflète si un token est déjà enregistré.
+                  Le résultat du test de connexion (vert/rouge) s'affiche, lui,
+                  dans le formulaire après clic sur « Connecter HubSpot ». */}
+              {hasHubspotToken ? (
+                <Badge
+                  variant="outline"
+                  className="border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                >
+                  Configuré
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                >
+                  En attente de configuration
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <HubspotSettingsForm
+              canEdit={isOwner}
+              hasToken={hasHubspotToken}
+              defaultPortalId={hubspotPortalId}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* ---------------------------------------------------------------- */}
+      {/* 6. Zone danger                                                    */}
       {/* ---------------------------------------------------------------- */}
       <Card className="mt-8 border-destructive/40">
         <CardHeader>
