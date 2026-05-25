@@ -212,7 +212,11 @@ export default async function SettingsPage() {
       {/* ---------------------------------------------------------------- */}
       {/* 4. Profil IA                                                      */}
       {/* ---------------------------------------------------------------- */}
-      <Card className="mt-8">
+      {/* id="profil-ia" : cible de l'ancre depuis le badge "Analyse
+          personnalisée" affiché sur la page détail d'un appel. scroll-mt
+          décale le scroll vers le bas pour que le titre ne soit pas coincé
+          sous d'éventuels headers fixes. */}
+      <Card id="profil-ia" className="mt-8 scroll-mt-20">
         <CardHeader>
           <CardTitle>Profil IA</CardTitle>
           <CardDescription>

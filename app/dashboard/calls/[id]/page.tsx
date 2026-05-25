@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Clock, FileQuestion } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clock, FileQuestion, Sparkles } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,6 +11,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { UpgradeBanner } from "@/components/dashboard/upgrade-banner";
 import { createClient } from "@/lib/supabase/server";
@@ -173,7 +179,8 @@ export default async function CallDetailPage({
         summary,
         strengths,
         weaknesses,
-        coaching_advice
+        coaching_advice,
+        used_ai_profile
       )
     `,
     )
@@ -220,6 +227,9 @@ export default async function CallDetailPage({
   const weaknesses = (analysis?.weaknesses ?? []) as StrengthOrWeakness[];
   const summary = (analysis?.summary ?? "") as string;
   const scoreGlobal = analysis?.score_global as number | null | undefined;
+  // Flag persisté à l'insert dans /api/analyze. true → l'analyse a été
+  // contextualisée par le profil IA de l'org au moment où elle a tourné.
+  const usedAiProfile = Boolean(analysis?.used_ai_profile);
   const coaching = ((analysis?.coaching_advice ?? []) as CoachingAdvice[])
     .slice()
     .sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
@@ -296,14 +306,45 @@ export default async function CallDetailPage({
         <section className="mb-10 grid gap-6">
           {/* Score global */}
           <Card>
-            <CardHeader>
-              <CardDescription>Score global</CardDescription>
-              <CardTitle className="text-4xl font-bold tabular-nums tracking-tight md:text-5xl">
-                {scoreGlobal ?? "–"}
-                <span className="ml-1 text-xl font-medium text-muted-foreground md:text-2xl">
-                  /100
-                </span>
-              </CardTitle>
+            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+              <div className="space-y-1.5">
+                <CardDescription>Score global</CardDescription>
+                <CardTitle className="text-4xl font-bold tabular-nums tracking-tight md:text-5xl">
+                  {scoreGlobal ?? "–"}
+                  <span className="ml-1 text-xl font-medium text-muted-foreground md:text-2xl">
+                    /100
+                  </span>
+                </CardTitle>
+              </div>
+              {/* Badge "Analyse personnalisée" — visible uniquement si le
+                  profil IA de l'org a été injecté dans le prompt Claude
+                  (flag persisté en DB au moment de l'analyse). Cliquable :
+                  ramène vers les réglages du Profil IA via l'ancre. */}
+              {usedAiProfile ? (
+                <TooltipProvider delay={150}>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Link
+                          href="/dashboard/settings#profil-ia"
+                          aria-label="Voir le Profil IA dans les réglages"
+                        />
+                      }
+                    >
+                      <Badge
+                        variant="outline"
+                        className="cursor-pointer gap-1 border-emerald-500/50 bg-emerald-500/10 text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300"
+                      >
+                        <Sparkles className="size-3" aria-hidden />
+                        Analyse personnalisée ✓
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Cette analyse a utilisé le Profil IA de votre organisation
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : null}
             </CardHeader>
           </Card>
 
