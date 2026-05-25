@@ -207,6 +207,62 @@ export async function getDeal(
 }
 
 // ============================================================================
+// 2bis. getContact — récupère un contact par son ID (J16, pour la CRM Card).
+// ============================================================================
+// À l'ouverture d'une fiche contact, HubSpot nous transmet l'ID du contact.
+// On en lit le téléphone pour retrouver les appels Aloalo correspondants.
+// On ramène `phone` ET `mobilephone` : un contact peut n'avoir renseigné que
+// l'un des deux, et l'appel peut avoir été passé sur l'un ou l'autre.
+// @returns { id, firstname, lastname, phone, mobilephone } ou null.
+export type HubspotContactDetails = {
+  id: string;
+  firstname: string | null;
+  lastname: string | null;
+  phone: string | null;
+  mobilephone: string | null;
+};
+
+export async function getContact(
+  contactId: string,
+  token: string,
+): Promise<HubspotContactDetails | null> {
+  if (!contactId || !token) return null;
+
+  const props = "phone,mobilephone,firstname,lastname";
+  const res = await hubspotFetch(
+    `/crm/v3/objects/contacts/${encodeURIComponent(contactId)}?properties=${props}`,
+    token,
+  );
+
+  if (!res || !res.ok) {
+    if (res) {
+      console.error("[hubspot] getContact failed", {
+        contactId,
+        status: res.status,
+      });
+    }
+    return null;
+  }
+
+  try {
+    const data = (await res.json()) as {
+      id: string;
+      properties?: Record<string, string | null>;
+    };
+    const p = data.properties ?? {};
+    return {
+      id: data.id,
+      firstname: p.firstname ?? null,
+      lastname: p.lastname ?? null,
+      phone: p.phone ?? null,
+      mobilephone: p.mobilephone ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
 // 3. createTimelineEvent — STUB en attendant J16.
 // ============================================================================
 // Les Timeline Events HubSpot exigent un `eventTemplateId` créé via une app
