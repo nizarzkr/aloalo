@@ -90,6 +90,36 @@ export const RingoverApiKeySchema = z.object({
 export type RingoverApiKeyInput = z.infer<typeof RingoverApiKeySchema>
 
 // ---------------------------------------------------------------------------
+// AiProfileSchema — Server Action updateAiProfile
+// ---------------------------------------------------------------------------
+// Profil commercial de l'organisation injecté dans le system prompt Claude
+// lors de l'analyse d'un appel. Tous les champs sont OPTIONNELS — l'owner
+// peut remplir le formulaire en plusieurs fois, et un profil partiel reste
+// meilleur qu'aucun profil.
+//
+// Règles :
+//  - chaque champ : string, trim, max 1000 caractères
+//  - '' (vide après trim) → null en DB pour ne pas stocker du bruit
+//  - Le JSON final stocké dans organizations.ai_profile (jsonb) ne contient
+//    QUE les clés non-nulles. Une org sans aucun champ rempli a NULL.
+const AiProfileFieldSchema = z
+  .union([z.literal(''), z.string().trim().max(1000, 'champ trop long (max 1000 caractères)')])
+  .optional()
+  .transform((v) => (v && v !== '' ? v : null))
+
+export const AiProfileSchema = z.object({
+  activity: AiProfileFieldSchema,
+  icp: AiProfileFieldSchema,
+  objections: AiProfileFieldSchema,
+  offer: AiProfileFieldSchema,
+  value_prop: AiProfileFieldSchema,
+  competitors: AiProfileFieldSchema,
+  methodology: AiProfileFieldSchema,
+})
+
+export type AiProfileData = z.infer<typeof AiProfileSchema>
+
+// ---------------------------------------------------------------------------
 // RingoverWebhookSchema — POST /api/webhooks/ringover
 // ---------------------------------------------------------------------------
 // Forme réelle du payload Ringover (et notre fixture de simulation) :

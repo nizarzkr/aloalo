@@ -5,7 +5,8 @@
 //   1. Compte (lecture seule — informations du user courant)
 //   2. Mon organisation (édition du nom + URL logo, owner uniquement)
 //   3. Intégration Ringover (URL de webhook à communiquer au support)
-//   4. Zone danger (suppression de compte RGPD — J10)
+//   4. Profil IA (contexte commercial injecté dans le prompt Claude — J14)
+//   5. Zone danger (suppression de compte RGPD — J10)
 //
 // Server Component pour le chargement des données. Le formulaire org passe
 // par un wrapper client minimal (`OrgSettingsForm`) afin d'utiliser
@@ -14,6 +15,7 @@
 
 import { redirect } from "next/navigation";
 
+import { AiProfileForm } from "@/components/dashboard/ai-profile-form";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { DeleteAccountDialog } from "@/components/dashboard/delete-account-dialog";
 import { OrgSettingsForm } from "@/components/dashboard/org-settings-form";
@@ -27,6 +29,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
+import type { AiProfileData } from "@/lib/validations";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +54,7 @@ export default async function SettingsPage() {
       .single(),
     supabase
       .from("organizations")
-      .select("id, name, logo_url, ringover_api_key")
+      .select("id, name, logo_url, ringover_api_key, ai_profile")
       .maybeSingle(),
   ]);
 
@@ -59,6 +62,10 @@ export default async function SettingsPage() {
   const hasRingoverKey = Boolean(
     org?.ringover_api_key && org.ringover_api_key.length > 0,
   );
+  // ai_profile est un jsonb en DB → `unknown` côté TS. On le caste prudemment
+  // en Partial<AiProfileData> ; le composant supporte les clés manquantes.
+  const aiProfile =
+    (org?.ai_profile as Partial<AiProfileData> | null | undefined) ?? null;
 
   // URL du webhook Ringover — construite à partir de NEXT_PUBLIC_APP_URL pour
   // pointer vers la prod (ou la preview Vercel), pas vers localhost.
@@ -203,7 +210,24 @@ export default async function SettingsPage() {
       </Card>
 
       {/* ---------------------------------------------------------------- */}
-      {/* 4. Zone danger                                                    */}
+      {/* 4. Profil IA                                                      */}
+      {/* ---------------------------------------------------------------- */}
+      <Card className="mt-8">
+        <CardHeader>
+          <CardTitle>Profil IA</CardTitle>
+          <CardDescription>
+            Ce contexte est injecté dans l&apos;analyse IA de chaque appel.
+            Plus il est précis, plus le coaching généré sera pertinent pour
+            votre équipe.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AiProfileForm defaultValues={aiProfile} canEdit={isOwner} />
+        </CardContent>
+      </Card>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* 5. Zone danger                                                    */}
       {/* ---------------------------------------------------------------- */}
       <Card className="mt-8 border-destructive/40">
         <CardHeader>
