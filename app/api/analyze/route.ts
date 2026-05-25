@@ -22,9 +22,11 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { analyzeCall, estimateCostEur, ANALYSIS_MODEL } from '@/lib/claude'
+import type { CallAnalysis } from '@/lib/claude'
+import { searchContactByPhone, createNote } from '@/lib/hubspot'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
 import type { AiProfileData } from '@/lib/validations'
@@ -40,6 +42,38 @@ function getAdminClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SECRET_KEY!
   )
+}
+
+/**
+ * Résumé court (≤ 200 mots) poussé en note HubSpot après analyse :
+ * score global + 3 points forts + 2 axes d'amélioration. On n'utilise que les
+ * libellés `point` (pas les citations) pour rester lisible dans la timeline.
+ */
+function buildNoteSummary(a: CallAnalysis): string {
+  const strengths = (a.strengths ?? [])
+    .slice(0, 3)
+    .map((s) => `• ${s.point}`)
+    .join('\n')
+  const weaknesses = (a.weaknesses ?? [])
+    .slice(0, 2)
+    .map((w) => `• ${w.point}`)
+    .join('\n')
+
+  const parts = [
+    `Analyse Aloalo — Score global : ${a.score_global}/100`,
+    a.summary ? `\n${a.summary}` : '',
+    strengths ? `\nPoints forts :\n${strengths}` : '',
+    weaknesses ? `\nAxes d'amélioration :\n${weaknesses}` : '',
+  ].filter(Boolean)
+
+  return capWords(parts.join('\n'), 200)
+}
+
+// Tronque à `max` mots (garde-fou : la spec J16 demande 200 mots max).
+function capWords(text: string, max: number): string {
+  const words = text.split(/\s+/)
+  if (words.length <= max) return text
+  return words.slice(0, max).join(' ') + '…'
 }
 
 export async function POST(req: NextRequest) {
@@ -68,7 +102,7 @@ export async function POST(req: NextRequest) {
   // 1. Fetch le call
   const { data: call, error: fetchError } = await supabase
     .from('calls')
-    .select('id, organization_id, status, transcript_text, transcript_segments')
+    .select('id, organization_id, status, transcript_text, transcript_segments, contact_phone, contact_name')
     .eq('id', callId)
     .single()
 
@@ -101,7 +135,7 @@ export async function POST(req: NextRequest) {
   // que la page détail saura reconnaître pour afficher la bannière upgrade.
   const { data: org } = await supabase
     .from('organizations')
-    .select('subscription_status, subscription_plan, ai_profile')
+    .select('subscription_status, subscription_plan, ai_profile, hubspot_token, hubspot_portal_id')
     .eq('id', call.organization_id)
     .single()
 
@@ -228,6 +262,41 @@ export async function POST(req: NextRequest) {
     '[analyze] ✅ Analyse OK call:', callId,
     `score=${analysis.score_global}, tokens=${usage.input_tokens}+${usage.output_tokens}, ${costEur}€, profil=${usedAiProfile ? 'oui' : 'non'}`
   )
+
+  // 8. Push HubSpot (J16) — note d'analyse sur le contact, en arrière-plan.
+  //    after() exécute ce travail APRÈS l'envoi de la réponse sans la bloquer ;
+  //    Vercel garde la fonction vivante (un fire-and-forget nu serait coupé).
+  //    On ne pousse que si le token est présent ET qu'on a un numéro à matcher.
+  //    Aucune erreur HubSpot ne remonte ici : tout est try/catch + dégradé.
+  if (org?.hubspot_token && call.contact_phone) {
+    const hubspotToken = org.hubspot_token
+    const phone = call.contact_phone
+    const noteSummary = buildNoteSummary(analysis)
+
+    after(async () => {
+      try {
+        const contact = await searchContactByPhone(phone, hubspotToken)
+        if (!contact) {
+          console.log('[hubspot] aucun contact trouvé pour ce numéro — note non créée')
+          return
+        }
+
+        const noteId = await createNote(contact.id, noteSummary, hubspotToken)
+        if (noteId) {
+          // On logge l'ID du contact/note, JAMAIS le token.
+          console.log(`[hubspot] note créée pour contactId=${contact.id} (noteId=${noteId})`)
+        } else {
+          console.warn('[hubspot] createNote a échoué (dégradé null)')
+        }
+      } catch (err) {
+        // HubSpot down ne doit jamais impacter le pipeline d'analyse.
+        console.error(
+          '[hubspot] push post-analyse échoué',
+          err instanceof Error ? err.message : 'unknown',
+        )
+      }
+    })
+  }
 
   return NextResponse.json({ success: true, analysisId: inserted.id })
 }
