@@ -1,0 +1,12 @@
+{
+  "uid": "aloalo_crm_card_card",
+  "type": "card",
+  "config": {
+    "name": "Historique Aloalo",
+    "location": "crm.record.tab",
+    "entrypoint": "/app/cards/AloaloCard.tsx",
+    "objectTypes": [
+      "contacts"
+    ]
+  }
+}

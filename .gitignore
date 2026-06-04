@@ -42,3 +42,6 @@ next-env.d.ts
 
 # supabase CLI cache (lien projet local, jamais à committer)
 supabase/.temp/
+
+# hubspot CLI — contient la personal access key, JAMAIS à committer
+hubspot.config.yml

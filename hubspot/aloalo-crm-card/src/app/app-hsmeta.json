@@ -1,0 +1,33 @@
+{
+  "uid": "aloalo_crm_card_app",
+  "type": "app",
+  "config": {
+    "description": "Affiche l'historique de coaching Aloalo (score, appels analysés, axe prioritaire) sur la fiche contact.",
+    "name": "aloalo-crm-card-App",
+    "distribution": "private",
+    "auth": {
+      "type": "static",
+      "requiredScopes": [
+        "oauth",
+        "crm.objects.contacts.read",
+        "crm.objects.contacts.write"
+      ],
+      "optionalScopes": [],
+      "conditionallyRequiredScopes": []
+    },
+    "permittedUrls": {
+      "fetch": [
+        "https://api.hubapi.com",
+        "https://aloalo-three.vercel.app"
+      ],
+      "iframe": [],
+      "img": []
+    },
+    "support": {
+      "supportEmail": "support@example.com",
+      "documentationUrl": "https://example.com/docs",
+      "supportUrl": "https://example.com/support",
+      "supportPhone": "+18005555555"
+    }
+  }
+}
