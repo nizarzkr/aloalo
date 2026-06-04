@@ -67,7 +67,8 @@ function isAuthorized(req: NextRequest): boolean {
   if (!Number.isFinite(age) || age > MAX_SIGNATURE_AGE_MS) return false
 
   // GET → corps vide. base = method + url + body + timestamp.
-  const base = `GET${publicUrl(req)}${timestamp}`
+  const url = publicUrl(req)
+  const base = `GET${url}${timestamp}`
   const expected = createHmac('sha256', clientSecret)
     .update(base, 'utf8')
     .digest('base64')
@@ -75,7 +76,30 @@ function isAuthorized(req: NextRequest): boolean {
   // Comparaison à temps constant (évite le timing attack). Longueurs ≠ → faux.
   const a = Buffer.from(expected)
   const b = Buffer.from(signature)
-  return a.length === b.length && timingSafeEqual(a, b)
+  const ok = a.length === b.length && timingSafeEqual(a, b)
+
+  // ⚠️ LOG DE DIAGNOSTIC TEMPORAIRE (à retirer une fois la signature OK). Ne
+  // logue JAMAIS le secret — seulement sa longueur, et les URLs reconstruites.
+  if (!ok) {
+    // Variante "URL brute" (sans re-parsing nextUrl) pour repérer un éventuel
+    // ré-encodage des query params par Next.
+    const qIndex = req.url.indexOf('?')
+    const rawSearch = qIndex >= 0 ? req.url.slice(qIndex) : ''
+    console.error('[hubspot/card-data] SIGNATURE MISMATCH', {
+      reconstructedUrl: url,
+      rawSearch,
+      nextUrlSearch: req.nextUrl.search,
+      xForwardedHost: req.headers.get('x-forwarded-host'),
+      host: req.headers.get('host'),
+      xForwardedProto: req.headers.get('x-forwarded-proto'),
+      timestamp,
+      sigReceived: signature,
+      sigComputed: expected,
+      secretLen: clientSecret.length,
+    })
+  }
+
+  return ok
 }
 
 export async function GET(req: NextRequest) {
