@@ -87,16 +87,9 @@ function isAuthorized(req: NextRequest): boolean {
     return exp.length === sig.length && timingSafeEqual(exp, sig)
   })
 
-  // ⚠️ LOG DE DIAGNOSTIC TEMPORAIRE (à retirer une fois confirmé OK). Ne logue
-  // JAMAIS le secret — seulement sa longueur et les URLs reconstruites.
-  if (!matches) {
-    console.error('[hubspot/card-data] SIGNATURE MISMATCH', {
-      candidates: [...candidates],
-      timestamp,
-      sigReceived: signature,
-      secretLen: clientSecret.length,
-    })
-  }
+  // Log minimal sans PII (l'URL contient userEmail → on ne la logue pas). Ne
+  // devrait jamais arriver pour une vraie requête HubSpot.
+  if (!matches) console.warn('[hubspot/card-data] signature v3 invalide → 401')
 
   return matches
 }
