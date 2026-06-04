@@ -71,6 +71,7 @@ NEXT_PUBLIC_SENTRY_DSN=https://...@sentry.io/...   # observability (J13) — pub
 SENTRY_AUTH_TOKEN=sntrys_...                       # upload source maps au build (Vercel uniquement)
 SENTRY_ORG=aloalo                                   # slug de l'organisation Sentry
 SENTRY_PROJECT=aloalo-slug                          # slug du projet Sentry
+HUBSPOT_APP_CLIENT_SECRET=...                       # client secret de l'App Card HubSpot (UI Extension) — vérifie la signature X-HubSpot-Signature-v3 des requêtes hubspot.fetch() vers /api/hubspot/card-data. Récupérable dans les réglages d'auth de l'app HubSpot. (Remplace l'ancien HUBSPOT_CARD_SECRET, abandonné avec la fonction serverless.)
 ```
 
 Ajouts prévus : `STRIPE_WEBHOOK_SECRET` (J9), `RINGOVER_WEBHOOK_SECRET` (J3).
