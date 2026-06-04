@@ -71,6 +71,14 @@ function progressColor(score: number) {
   return "bg-red-500";
 }
 
+// Garde défensive : les champs jsonb (strengths/weaknesses/coaching_advice)
+// DEVRAIENT être des tableaux, mais une donnée malformée (vieille analyse, sortie
+// IA inattendue) peut être une string/objet → `.map`/`.sort` planterait le rendu
+// serveur entier. On normalise en tableau pour ne jamais casser la page.
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
 const STATUS_LABEL: Record<string, string> = {
   pending: "En attente",
   transcribing: "Transcription",
@@ -204,9 +212,7 @@ export default async function CallDetailPage({
   const contactDisplay =
     call.contact_name ?? call.callee_number ?? "Appel sans contact";
 
-  const segments = (call.transcript_segments ?? null) as
-    | TranscriptSegment[]
-    | null;
+  const segments = asArray<TranscriptSegment>(call.transcript_segments);
 
   // États d'absence d'analyse — on les distingue pour donner un message clair.
   // USAGE_LIMIT_REACHED a déjà sa propre bannière (UpgradeBanner) au-dessus,
@@ -223,14 +229,14 @@ export default async function CallDetailPage({
   const showAnalysisStateBlock =
     isFailedNonUsage || isInProgress || isAnalyzedButMissing;
 
-  const strengths = (analysis?.strengths ?? []) as StrengthOrWeakness[];
-  const weaknesses = (analysis?.weaknesses ?? []) as StrengthOrWeakness[];
+  const strengths = asArray<StrengthOrWeakness>(analysis?.strengths);
+  const weaknesses = asArray<StrengthOrWeakness>(analysis?.weaknesses);
   const summary = (analysis?.summary ?? "") as string;
   const scoreGlobal = analysis?.score_global as number | null | undefined;
   // Flag persisté à l'insert dans /api/analyze. true → l'analyse a été
   // contextualisée par le profil IA de l'org au moment où elle a tourné.
   const usedAiProfile = Boolean(analysis?.used_ai_profile);
-  const coaching = ((analysis?.coaching_advice ?? []) as CoachingAdvice[])
+  const coaching = asArray<CoachingAdvice>(analysis?.coaching_advice)
     .slice()
     .sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
 
@@ -501,7 +507,7 @@ export default async function CallDetailPage({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {!segments || segments.length === 0 ? (
+            {segments.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Transcription en cours…
               </p>
