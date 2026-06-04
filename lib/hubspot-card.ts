@@ -20,7 +20,7 @@
 // ============================================================================
 
 import { createClient } from '@supabase/supabase-js'
-import { getContact } from '@/lib/hubspot'
+import { getContact, getDealCalls } from '@/lib/hubspot'
 
 // Données affichables de la carte (dernier appel analysé du contact).
 export type CardData = {
@@ -31,8 +31,22 @@ export type CardData = {
   lastCallId: string
 }
 
+// Données affichables de la carte DEAL : digest des appels rattachés à CE deal.
+// `avgScore` = santé commerciale du dossier (moyenne des scores du deal).
+export type DealCardData = {
+  callCount: number
+  avgScore: number | null
+  lastScore: number | null
+  lastCallLabel: string
+  lastCallId: string
+}
+
 // Soit des données, soit un message expliquant pourquoi il n'y a rien à montrer.
-export type CardResult = CardData | { message: string }
+// Un type par surface pour que l'appelant garde un narrowing précis (la carte
+// contact n'a pas `avgScore`, la carte deal n'a pas `axe`).
+export type ContactCardResult = CardData | { message: string }
+export type DealCardResult = DealCardData | { message: string }
+export type CardResult = ContactCardResult | DealCardResult
 
 // Garde de type pratique pour l'appelant.
 export function isCardMessage(r: CardResult): r is { message: string } {
@@ -97,7 +111,7 @@ export async function getContactCardData({
 }: {
   portalId: string
   contactId: string
-}): Promise<CardResult> {
+}): Promise<ContactCardResult> {
   if (!portalId) return { message: 'Portail non configuré dans Aloalo' }
 
   const supabase = getAdminClient()
@@ -164,5 +178,147 @@ export async function getContactCardData({
     lastCallLabel: lastCallRaw ? DATE_FMT.format(new Date(lastCallRaw)) : '—',
     axe: pickAxe(lastAnalysis),
     lastCallId: first.id,
+  }
+}
+
+// Tolérance de jointure appel HubSpot ↔ appel Aloalo : même numéro ET horaires
+// à moins de 2 min d'écart. Faute de clé d'ID partagée (hs_call_external_id non
+// exposé), on s'appuie sur (numéro + horodatage). 2 min absorbe le décalage
+// d'horloge Ringover↔HubSpot sans risquer de confondre deux appels distincts.
+const MATCH_WINDOW_MS = 2 * 60 * 1000
+
+// Forme d'un appel Aloalo candidat lu pour le matching deal.
+type AloaloCallRow = {
+  id: string
+  callee_number: string | null
+  started_at: string | null
+  created_at: string
+  analyses: unknown
+}
+
+// Instant de référence d'un appel Aloalo (started_at, sinon created_at).
+function callMs(row: AloaloCallRow): number {
+  const raw = row.started_at ?? row.created_at
+  const ms = raw ? Date.parse(raw) : NaN
+  return Number.isFinite(ms) ? ms : NaN
+}
+
+// ----------------------------------------------------------------------------
+// getDealCardData — digest des appels analysés rattachés à UN deal.
+//   portalId : Hub ID du portail HubSpot appelant → identifie l'org Aloalo.
+//   dealId   : ID du deal HubSpot ouvert.
+// On lit les appels que HubSpot associe au deal, puis on les relie aux appels
+// Aloalo par (numéro appelé + horodatage). C'est HubSpot qui tranche quels
+// appels appartiennent au deal — d'où la précision même quand un contact a
+// plusieurs deals.
+// ----------------------------------------------------------------------------
+export async function getDealCardData({
+  portalId,
+  dealId,
+}: {
+  portalId: string
+  dealId: string
+}): Promise<DealCardResult> {
+  if (!portalId) return { message: 'Portail non configuré dans Aloalo' }
+
+  const supabase = getAdminClient()
+
+  // 1. portalId → org Aloalo
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('id, hubspot_token')
+    .eq('hubspot_portal_id', portalId)
+    .limit(1)
+    .maybeSingle()
+
+  if (!org) return { message: 'Portail non configuré dans Aloalo' }
+  if (!org.hubspot_token) {
+    return { message: 'Connexion HubSpot incomplète côté Aloalo' }
+  }
+  if (!dealId) {
+    return { message: 'Ouvrez une fiche deal pour voir le digest Aloalo' }
+  }
+
+  // 2. Appels que HubSpot rattache à ce deal (numéro appelé + horodatage).
+  const dealCalls = await getDealCalls(dealId, org.hubspot_token)
+  const numbers = [
+    ...new Set(
+      dealCalls
+        .map((c) => c.toNumber)
+        .filter((n): n is string => typeof n === 'string' && n.trim().length > 0),
+    ),
+  ]
+  if (numbers.length === 0) {
+    return { message: 'Aucun appel analysé sur ce deal' }
+  }
+
+  // 3. Appels Aloalo candidats : mêmes numéros, avec analyse (jointure stricte).
+  const { data: rows } = await supabase
+    .from('calls')
+    .select(
+      'id, callee_number, started_at, created_at, analyses!inner(score_global)',
+    )
+    .eq('organization_id', org.id)
+    .in('callee_number', numbers)
+    .order('started_at', { ascending: false, nullsFirst: false })
+
+  const candidates = (rows ?? []) as AloaloCallRow[]
+  if (candidates.length === 0) {
+    return { message: 'Aucun appel analysé sur ce deal' }
+  }
+
+  // 4. Matcher chaque appel HubSpot au plus proche appel Aloalo (même numéro,
+  //    écart d'horaire ≤ fenêtre), sans réutiliser deux fois le même appel.
+  const usedAloalo = new Set<string>()
+  const matched: Array<{ id: string; score: number | null; ms: number }> = []
+
+  for (const hc of dealCalls) {
+    if (!hc.toNumber || hc.timestampMs == null) continue
+    let best: AloaloCallRow | null = null
+    let bestDelta = Infinity
+    for (const row of candidates) {
+      if (usedAloalo.has(row.id)) continue
+      if (row.callee_number !== hc.toNumber) continue
+      const ms = callMs(row)
+      if (!Number.isFinite(ms)) continue
+      const delta = Math.abs(ms - hc.timestampMs)
+      if (delta <= MATCH_WINDOW_MS && delta < bestDelta) {
+        best = row
+        bestDelta = delta
+      }
+    }
+    if (best) {
+      usedAloalo.add(best.id)
+      matched.push({
+        id: best.id,
+        score: pickAnalysis(best.analyses)?.score_global ?? null,
+        ms: callMs(best),
+      })
+    }
+  }
+
+  if (matched.length === 0) {
+    return { message: 'Aucun appel analysé sur ce deal' }
+  }
+
+  // 5. Agréger : moyenne des scores + dernier appel (le plus récent).
+  const scores = matched
+    .map((m) => m.score)
+    .filter((s): s is number => typeof s === 'number')
+  const avgScore =
+    scores.length > 0
+      ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+      : null
+
+  const last = matched.reduce((a, b) => (b.ms > a.ms ? b : a))
+
+  return {
+    callCount: matched.length,
+    avgScore,
+    lastScore: last.score,
+    lastCallLabel: Number.isFinite(last.ms)
+      ? DATE_FMT.format(new Date(last.ms))
+      : '—',
+    lastCallId: last.id,
   }
 }

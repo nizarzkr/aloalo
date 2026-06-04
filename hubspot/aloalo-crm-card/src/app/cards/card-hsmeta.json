@@ -6,7 +6,8 @@
     "location": "crm.record.tab",
     "entrypoint": "/app/cards/AloaloCard.tsx",
     "objectTypes": [
-      "contacts"
+      "contacts",
+      "deals"
     ]
   }
 }

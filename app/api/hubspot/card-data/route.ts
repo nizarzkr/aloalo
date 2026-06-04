@@ -22,16 +22,21 @@
  *
  * Query string (portalId est ajouté automatiquement par hubspot.fetch) :
  *   portalId  — Hub ID du portail HubSpot → identifie l'org Aloalo
- *   contactId — ID du contact HubSpot ouvert
+ *   contactId — ID du contact HubSpot ouvert (carte sur fiche contact)
+ *   dealId    — ID du deal HubSpot ouvert (carte sur fiche deal). Si présent,
+ *               on renvoie le digest DU deal ; sinon le digest du contact.
  *
- * Réponse : { lastScore, callCount, lastCallLabel, axe, lastCallId }
- *           ou { message } pour les états vides. Jamais de 500 (try/catch).
+ * Réponse :
+ *   - fiche contact : { lastScore, callCount, lastCallLabel, axe, lastCallId }
+ *   - fiche deal    : { callCount, avgScore, lastScore, lastCallLabel, lastCallId }
+ *   - état vide     : { message }
+ *   Jamais de 500 (try/catch).
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import * as Sentry from '@sentry/nextjs'
-import { getContactCardData } from '@/lib/hubspot-card'
+import { getContactCardData, getDealCardData } from '@/lib/hubspot-card'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -102,9 +107,13 @@ export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams
   const portalId = params.get('portalId') ?? ''
   const contactId = params.get('contactId') ?? ''
+  const dealId = params.get('dealId') ?? ''
 
   try {
-    const result = await getContactCardData({ portalId, contactId })
+    // Fiche deal → digest du deal ; sinon (fiche contact) → digest du contact.
+    const result = dealId
+      ? await getDealCardData({ portalId, dealId })
+      : await getContactCardData({ portalId, contactId })
     return NextResponse.json(result)
   } catch (err) {
     console.error(

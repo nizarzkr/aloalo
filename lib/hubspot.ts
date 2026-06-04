@@ -207,6 +207,100 @@ export async function getDeal(
 }
 
 // ============================================================================
+// 2ter. getDealCalls — appels (call engagements) associés à un deal.
+// ============================================================================
+// Pour la carte CRM scopée au deal : on lit l'association `deals → calls` que
+// HubSpot tient déjà à jour (un appel passé depuis Ringover/Aircall via le deal
+// y est rattaché). On récupère, pour chaque appel, son numéro appelé et son
+// horodatage — la seule clé de jointure dispo vers nos appels Aloalo, faute de
+// `hs_call_external_id` exposé côté portail (cf. décision archi carte deal).
+//
+// 2 requêtes :
+//   1. v4 associations deals→calls → liste d'IDs de call engagements.
+//   2. v3 batch read des calls → (hs_call_to_number, hs_timestamp).
+//
+// @returns liste de { id, toNumber, timestampMs } ou [] (deal sans appel OU
+//          erreur — on dégrade silencieusement, la carte gère le cas vide).
+export type HubspotDealCall = {
+  id: string;
+  toNumber: string | null;
+  timestampMs: number | null;
+};
+
+// Plafond volontaire : un deal a rarement >100 appels, et ça borne le batch read.
+const DEAL_CALLS_LIMIT = 100;
+
+export async function getDealCalls(
+  dealId: string,
+  token: string,
+): Promise<HubspotDealCall[]> {
+  if (!dealId || !token) return [];
+
+  // 1. IDs des appels associés au deal (association v4).
+  const assocRes = await hubspotFetch(
+    `/crm/v4/objects/deals/${encodeURIComponent(dealId)}/associations/calls?limit=${DEAL_CALLS_LIMIT}`,
+    token,
+  );
+  if (!assocRes || !assocRes.ok) {
+    if (assocRes) {
+      console.error("[hubspot] getDealCalls associations failed", {
+        dealId,
+        status: assocRes.status,
+      });
+    }
+    return [];
+  }
+
+  let callIds: string[] = [];
+  try {
+    const data = (await assocRes.json()) as {
+      results?: Array<{ toObjectId?: string | number }>;
+    };
+    callIds = (data.results ?? [])
+      .map((r) => (r.toObjectId != null ? String(r.toObjectId) : ""))
+      .filter((id) => id.length > 0);
+  } catch {
+    return [];
+  }
+  if (callIds.length === 0) return [];
+
+  // 2. Batch read des call engagements → numéro appelé + horodatage.
+  const readRes = await hubspotFetch("/crm/v3/objects/calls/batch/read", token, {
+    method: "POST",
+    body: {
+      properties: ["hs_call_to_number", "hs_timestamp"],
+      inputs: callIds.map((id) => ({ id })),
+    },
+  });
+  if (!readRes || !readRes.ok) {
+    if (readRes) {
+      console.error("[hubspot] getDealCalls batch read failed", {
+        dealId,
+        status: readRes.status,
+      });
+    }
+    return [];
+  }
+
+  try {
+    const data = (await readRes.json()) as {
+      results?: Array<{ id: string; properties?: Record<string, string | null> }>;
+    };
+    return (data.results ?? []).map((r) => {
+      const ts = r.properties?.hs_timestamp ?? null;
+      const ms = ts ? Date.parse(ts) : NaN;
+      return {
+        id: r.id,
+        toNumber: r.properties?.hs_call_to_number ?? null,
+        timestampMs: Number.isFinite(ms) ? ms : null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================================
 // 2bis. getContact — récupère un contact par son ID (J16, pour la CRM Card).
 // ============================================================================
 // À l'ouverture d'une fiche contact, HubSpot nous transmet l'ID du contact.
