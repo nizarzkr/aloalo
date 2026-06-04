@@ -66,40 +66,39 @@ function isAuthorized(req: NextRequest): boolean {
   const age = Date.now() - Number(timestamp)
   if (!Number.isFinite(age) || age > MAX_SIGNATURE_AGE_MS) return false
 
-  // GET → corps vide. base = method + url + body + timestamp.
-  const url = publicUrl(req)
-  const base = `GET${url}${timestamp}`
-  const expected = createHmac('sha256', clientSecret)
-    .update(base, 'utf8')
-    .digest('base64')
+  // base = method + uri + body(vide en GET) + timestamp, HMAC-SHA256 base64.
+  // ⚠️ HubSpot signe l'URI *décodée* (ex. `@` et non `%40` pour userEmail) — cf.
+  // gotcha doc « decode %3A, %2F… before hashing ». On teste donc l'URL telle
+  // que reçue ET sa version décodée, et on accepte si l'une des deux matche.
+  const rawUrl = publicUrl(req)
+  const candidates = new Set([rawUrl])
+  try {
+    candidates.add(decodeURIComponent(rawUrl))
+  } catch {
+    // decodeURIComponent peut throw sur une séquence % invalide → on ignore.
+  }
 
-  // Comparaison à temps constant (évite le timing attack). Longueurs ≠ → faux.
-  const a = Buffer.from(expected)
-  const b = Buffer.from(signature)
-  const ok = a.length === b.length && timingSafeEqual(a, b)
+  const sig = Buffer.from(signature)
+  const matches = [...candidates].some((uri) => {
+    const expected = createHmac('sha256', clientSecret)
+      .update(`GET${uri}${timestamp}`, 'utf8')
+      .digest('base64')
+    const exp = Buffer.from(expected)
+    return exp.length === sig.length && timingSafeEqual(exp, sig)
+  })
 
-  // ⚠️ LOG DE DIAGNOSTIC TEMPORAIRE (à retirer une fois la signature OK). Ne
-  // logue JAMAIS le secret — seulement sa longueur, et les URLs reconstruites.
-  if (!ok) {
-    // Variante "URL brute" (sans re-parsing nextUrl) pour repérer un éventuel
-    // ré-encodage des query params par Next.
-    const qIndex = req.url.indexOf('?')
-    const rawSearch = qIndex >= 0 ? req.url.slice(qIndex) : ''
+  // ⚠️ LOG DE DIAGNOSTIC TEMPORAIRE (à retirer une fois confirmé OK). Ne logue
+  // JAMAIS le secret — seulement sa longueur et les URLs reconstruites.
+  if (!matches) {
     console.error('[hubspot/card-data] SIGNATURE MISMATCH', {
-      reconstructedUrl: url,
-      rawSearch,
-      nextUrlSearch: req.nextUrl.search,
-      xForwardedHost: req.headers.get('x-forwarded-host'),
-      host: req.headers.get('host'),
-      xForwardedProto: req.headers.get('x-forwarded-proto'),
+      candidates: [...candidates],
       timestamp,
       sigReceived: signature,
-      sigComputed: expected,
       secretLen: clientSecret.length,
     })
   }
 
-  return ok
+  return matches
 }
 
 export async function GET(req: NextRequest) {
