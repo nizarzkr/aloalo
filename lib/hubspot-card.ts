@@ -131,6 +131,8 @@ export async function getContactCardData({
   // 3. 5 derniers appels analysés de ce contact.
   //    `analyses!inner` = jointure stricte → seuls les appels qui ONT une
   //    analyse. `count: 'exact'` renvoie le total réel (peut dépasser 5).
+  //    NB : le numéro de l'appel est dans `callee_number` (seule colonne
+  //    téléphone de `calls`). Match exact pour l'instant — voir TODO E.164.
   const { data: rows, count } = await supabase
     .from('calls')
     .select(
@@ -138,7 +140,7 @@ export async function getContactCardData({
       { count: 'exact' },
     )
     .eq('organization_id', org.id)
-    .in('contact_phone', phones)
+    .in('callee_number', phones)
     .order('started_at', { ascending: false, nullsFirst: false })
     .limit(5)
 
