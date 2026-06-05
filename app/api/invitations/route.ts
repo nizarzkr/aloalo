@@ -165,7 +165,9 @@ export async function POST(req: NextRequest) {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY!)
     await resend.emails.send({
-      from: 'Aloalo <noreply@resend.dev>',
+      // Domaine d'envoi : pillarops.fr (utilisé pour les POC). Nécessite que le
+      // domaine soit VÉRIFIÉ dans Resend (DNS SPF/DKIM) — sinon l'envoi échoue.
+      from: 'Aloalo <noreply@pillarops.fr>',
       to: body.email,
       subject: `Vous êtes invité à rejoindre ${org.name} sur Aloalo`,
       html: buildEmailHtml({
