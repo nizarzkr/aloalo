@@ -1,6 +1,16 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Clock, FileQuestion, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  FileQuestion,
+  Mail,
+  Sparkles,
+  UserX,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,6 +29,7 @@ import {
 } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { UpgradeBanner } from "@/components/dashboard/upgrade-banner";
+import { CopyButton } from "@/components/dashboard/copy-button";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -162,6 +173,15 @@ export default async function CallDetailPage({
   const orgId = profile?.organization_id;
   if (!orgId) notFound();
 
+  // Portal HubSpot de l'org — sert à construire les liens vers la fiche contact
+  // dans la section Synchro HubSpot (null si l'org n'a pas connecté HubSpot).
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("hubspot_portal_id")
+    .eq("id", orgId)
+    .single();
+  const hubspotPortalId = (org?.hubspot_portal_id as string | null) ?? null;
+
   // L'embed `analyses(...)` ramène directement le résultat IA. Le filtre
   // organization_id verrouille l'accès cross-org même si le slug est connu.
   const { data: call } = await supabase
@@ -177,6 +197,7 @@ export default async function CallDetailPage({
       status,
       error_message,
       transcript_segments,
+      hubspot_sync_status,
       analyses (
         score_global,
         score_discovery,
@@ -239,6 +260,26 @@ export default async function CallDetailPage({
   const coaching = asArray<CoachingAdvice>(analysis?.coaching_advice)
     .slice()
     .sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
+
+  // Synchro HubSpot + email de suivi proposé (J17). Présent uniquement sur les
+  // appels analysés après le branchement J17 ; null pour les anciens appels.
+  const sync = (call.hubspot_sync_status ?? null) as {
+    status?: string;
+    contact_id?: string;
+    note_id?: string;
+    task_id?: string;
+    email_id?: string;
+    email_pushed?: boolean;
+    template_name?: string;
+    email_subject?: string;
+    email_body?: string;
+  } | null;
+  const hasFollowupEmail = Boolean(sync?.email_subject && sync?.email_body);
+  // Lien direct vers la fiche contact HubSpot (objet contact = 0-1).
+  const contactUrl =
+    hubspotPortalId && sync?.contact_id
+      ? `https://app.hubspot.com/contacts/${hubspotPortalId}/record/0-1/${sync.contact_id}`
+      : null;
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10 md:px-10">
@@ -492,6 +533,110 @@ export default async function CallDetailPage({
             </CardHeader>
             <CardContent>
               <p className="text-sm leading-relaxed text-foreground">{summary}</p>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
+
+      {/* Suivi & synchro HubSpot (J17) — email de suivi proposé + push CRM */}
+      {status === "analyzed" && sync ? (
+        <section className="mb-10">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Mail className="size-4" aria-hidden />
+                Suivi &amp; synchro HubSpot
+              </CardTitle>
+              <CardDescription>
+                Email de suivi proposé automatiquement à partir de vos modèles,
+                personnalisé selon cet appel.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Statut de la synchro HubSpot */}
+              {sync.status === "synced" ? (
+                <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+                  <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                    <CheckCircle2 className="size-4" aria-hidden />
+                    Synchronisé avec HubSpot
+                  </p>
+                  <ul className="space-y-1 text-sm text-muted-foreground">
+                    <li>{sync.note_id ? "✓" : "—"} Note de synthèse</li>
+                    <li>{sync.task_id ? "✓" : "—"} Tâche de follow-up (J+2)</li>
+                    <li>
+                      {sync.email_pushed
+                        ? "✓ Email de suivi déposé en brouillon"
+                        : "○ Email de suivi proposé (à copier ci-dessous)"}
+                    </li>
+                  </ul>
+                  {contactUrl ? (
+                    <a
+                      href={contactUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                    >
+                      Ouvrir la fiche contact dans HubSpot
+                      <ExternalLink className="size-3.5" aria-hidden />
+                    </a>
+                  ) : null}
+                </div>
+              ) : sync.status === "no_contact" ? (
+                <p className="flex items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 text-sm text-orange-700 dark:text-orange-300">
+                  <UserX className="size-4 shrink-0" aria-hidden />
+                  Aucun contact HubSpot trouvé pour ce numéro — l&apos;email de
+                  suivi reste disponible ci-dessous.
+                </p>
+              ) : sync.status === "skipped" ? (
+                <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+                  HubSpot n&apos;est pas connecté.{" "}
+                  <Link
+                    href="/dashboard/settings#hubspot"
+                    className="font-medium text-foreground underline-offset-4 hover:underline"
+                  >
+                    Connecter HubSpot
+                  </Link>{" "}
+                  pour pousser automatiquement note, tâche et brouillon d&apos;email.
+                </p>
+              ) : null}
+
+              {/* Email de suivi proposé — toujours affiché s'il a été généré,
+                  quel que soit le résultat du push HubSpot. */}
+              {hasFollowupEmail ? (
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium">Email de suivi proposé</p>
+                    {sync.template_name ? (
+                      <Badge variant="outline" className="gap-1">
+                        <Sparkles className="size-3" aria-hidden />
+                        Modèle : {sync.template_name}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Objet
+                    </p>
+                    <p className="font-medium text-foreground">
+                      {sync.email_subject}
+                    </p>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Message
+                    </p>
+                    <p className="whitespace-pre-wrap leading-relaxed text-foreground">
+                      {sync.email_body}
+                    </p>
+                  </div>
+                  <div className="flex justify-end">
+                    <CopyButton
+                      value={`Objet : ${sync.email_subject}\n\n${sync.email_body}`}
+                      label="Copier l'email"
+                    />
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </section>

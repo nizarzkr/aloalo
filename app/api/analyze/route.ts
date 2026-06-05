@@ -26,7 +26,8 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { analyzeCall, estimateCostEur, ANALYSIS_MODEL } from '@/lib/claude'
 import type { CallAnalysis } from '@/lib/claude'
-import { searchContactByPhone, createNote } from '@/lib/hubspot'
+import { searchContactByPhone, createNote, createTask, createEmailDraft } from '@/lib/hubspot'
+import { pickAndFillFollowupEmail } from '@/lib/email-templates'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
 import type { AiProfileData } from '@/lib/validations'
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
   // 1. Fetch le call
   const { data: call, error: fetchError } = await supabase
     .from('calls')
-    .select('id, organization_id, status, transcript_text, transcript_segments, contact_phone, contact_name')
+    .select('id, organization_id, status, transcript_text, transcript_segments, callee_number, contact_name')
     .eq('id', callId)
     .single()
 
@@ -263,40 +264,102 @@ export async function POST(req: NextRequest) {
     `score=${analysis.score_global}, tokens=${usage.input_tokens}+${usage.output_tokens}, ${costEur}€, profil=${usedAiProfile ? 'oui' : 'non'}`
   )
 
-  // 8. Push HubSpot (J16) — note d'analyse sur le contact, en arrière-plan.
+  // 8. Automation post-analyse (J17) — en arrière-plan via after().
   //    after() exécute ce travail APRÈS l'envoi de la réponse sans la bloquer ;
   //    Vercel garde la fonction vivante (un fire-and-forget nu serait coupé).
-  //    On ne pousse que si le token est présent ET qu'on a un numéro à matcher.
-  //    Aucune erreur HubSpot ne remonte ici : tout est try/catch + dégradé.
-  if (org?.hubspot_token && call.contact_phone) {
-    const hubspotToken = org.hubspot_token
-    const phone = call.contact_phone
-    const noteSummary = buildNoteSummary(analysis)
+  //
+  //    a. Claude choisit + remplit l'email de suivi (modèle de vente) — TOUJOURS,
+  //       car c'est utile même sans HubSpot (visible sur la fiche appel Aloalo).
+  //    b. Si HubSpot est connecté ET qu'on retrouve le contact par son numéro :
+  //       note de synthèse + email brouillon + tâche de follow-up J+2.
+  //
+  //    Le résultat est persisté dans calls.hubspot_sync_status pour l'afficher
+  //    sur /dashboard/calls/[id]. Aucune erreur (HubSpot/Claude down) ne remonte :
+  //    tout est try/catch + dégradé, le pipeline d'analyse reste OK quoi qu'il arrive.
+  const contactName = (call.contact_name as string | null) ?? null
+  const phone = (call.callee_number as string | null) ?? null
+  const hubspotToken = (org?.hubspot_token as string | null) ?? null
 
-    after(async () => {
-      try {
+  after(async () => {
+    // Forme du jsonb : cf. migration 0010.
+    const sync: Record<string, unknown> = {
+      status: 'skipped',
+      synced_at: new Date().toISOString(),
+    }
+
+    try {
+      // a. Email de suivi proposé (indépendant de HubSpot). On le stocke toujours
+      //    pour que la valeur démo (« l'IA choisit + remplit votre modèle ») soit
+      //    visible côté Aloalo même si le push HubSpot échoue ou est absent.
+      const email = await pickAndFillFollowupEmail({ analysis, contactName })
+      if (email) {
+        sync.template_name = email.templateName
+        sync.email_subject = email.subject
+        sync.email_body = email.body
+      }
+
+      // b. Push HubSpot — uniquement si org connectée + numéro à matcher.
+      if (hubspotToken && phone) {
         const contact = await searchContactByPhone(phone, hubspotToken)
         if (!contact) {
-          console.log('[hubspot] aucun contact trouvé pour ce numéro — note non créée')
-          return
-        }
-
-        const noteId = await createNote(contact.id, noteSummary, hubspotToken)
-        if (noteId) {
-          // On logge l'ID du contact/note, JAMAIS le token.
-          console.log(`[hubspot] note créée pour contactId=${contact.id} (noteId=${noteId})`)
+          sync.status = 'no_contact'
         } else {
-          console.warn('[hubspot] createNote a échoué (dégradé null)')
+          sync.status = 'synced'
+          sync.contact_id = contact.id
+
+          // Note de synthèse (comportement historique J16).
+          const noteId = await createNote(
+            contact.id,
+            buildNoteSummary(analysis),
+            hubspotToken,
+          )
+          if (noteId) sync.note_id = noteId
+
+          // Tâche de follow-up à J+2.
+          const dueDateMs = Date.now() + 2 * 24 * 60 * 60 * 1000
+          const taskTitle = `Follow-up ${contact.firstname ?? contactName ?? 'prospect'} (appel analysé Aloalo)`
+          const taskId = await createTask(contact.id, taskTitle, dueDateMs, hubspotToken)
+          if (taskId) sync.task_id = taskId
+
+          // Email de suivi en brouillon sur la fiche contact.
+          // ⚠️ hs_email_status="DRAFT" n'est pas garanti par la doc HubSpot ;
+          // si le push échoue, email_pushed=false mais l'email proposé reste
+          // visible côté Aloalo (email_subject/email_body ci-dessus).
+          if (email) {
+            const emailId = await createEmailDraft(
+              contact.id,
+              email.subject,
+              email.body,
+              hubspotToken,
+            )
+            sync.email_pushed = Boolean(emailId)
+            if (emailId) sync.email_id = emailId
+          }
+
+          console.log(
+            `[hubspot] synchro post-analyse OK contactId=${contact.id}`,
+            `note=${sync.note_id ?? '–'} task=${sync.task_id ?? '–'} email=${sync.email_pushed ? 'oui' : 'non'}`,
+          )
         }
-      } catch (err) {
-        // HubSpot down ne doit jamais impacter le pipeline d'analyse.
-        console.error(
-          '[hubspot] push post-analyse échoué',
-          err instanceof Error ? err.message : 'unknown',
-        )
       }
-    })
-  }
+    } catch (err) {
+      // HubSpot/Claude down ne doit jamais impacter le pipeline d'analyse.
+      sync.status = 'error'
+      console.error(
+        '[analyze] automation post-analyse échouée',
+        err instanceof Error ? err.message : 'unknown',
+      )
+    }
+
+    // Persiste le résultat (best-effort — un échec d'update ne casse rien).
+    const { error: syncErr } = await supabase
+      .from('calls')
+      .update({ hubspot_sync_status: sync })
+      .eq('id', callId)
+    if (syncErr) {
+      console.error('[analyze] update hubspot_sync_status échoué', syncErr.message)
+    }
+  })
 
   return NextResponse.json({ success: true, analysisId: inserted.id })
 }
