@@ -483,6 +483,10 @@ export async function createEmailDraft(
         hs_email_subject: subject,
         hs_email_text: body,
         hs_email_status: "DRAFT",
+        // Obligatoire pour l'objet email HubSpot (sinon 400 VALIDATION_ERROR) :
+        // "EMAIL" = email sortant (commercial → prospect). Sans ça la création
+        // échouait silencieusement (email_pushed=false) alors que note/tâche OK.
+        hs_email_direction: "EMAIL",
         hs_timestamp: Date.now(),
       },
       associations: contactAssociation(contactId, ASSOC_EMAIL_TO_CONTACT),
