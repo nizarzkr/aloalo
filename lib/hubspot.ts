@@ -45,13 +45,11 @@ export type HubspotConnectionStatus = "connected" | "invalid" | "unknown";
 // constantes du référentiel HubSpot, pas des valeurs propres à notre portail.
 //   note  → contact : 202
 //   task  → contact : 204
-//   email → contact : 198
-// Une « association » lie un objet (note/tâche/email) à un contact pour qu'il
+// Une « association » lie un objet (note/tâche) à un contact pour qu'il
 // apparaisse dans la timeline de ce contact côté HubSpot.
 // ----------------------------------------------------------------------------
 const ASSOC_NOTE_TO_CONTACT = 202;
 const ASSOC_TASK_TO_CONTACT = 204;
-const ASSOC_EMAIL_TO_CONTACT = 198;
 
 // ----------------------------------------------------------------------------
 // Helper interne : un seul point de sortie réseau vers HubSpot.
@@ -428,12 +426,15 @@ export async function createNote(
 // 5. createTask — crée une tâche (à faire) associée à un contact.
 // ============================================================================
 // @param dueDateMs — échéance en millisecondes epoch (hs_timestamp).
+// @param body — contexte de la tâche (hs_task_body), optionnel. Sert à donner
+//   au commercial le « pourquoi » de la tâche (raison déduite de l'appel).
 // @returns l'ID de la tâche créée ou null.
 export async function createTask(
   contactId: string,
   title: string,
   dueDateMs: number,
   token: string,
+  body?: string,
 ): Promise<string | null> {
   if (!contactId || !token) return null;
 
@@ -444,6 +445,7 @@ export async function createTask(
         hs_task_subject: title,
         hs_task_status: "NOT_STARTED",
         hs_timestamp: dueDateMs,
+        ...(body ? { hs_task_body: body } : {}),
       },
       associations: contactAssociation(contactId, ASSOC_TASK_TO_CONTACT),
     },
@@ -452,52 +454,6 @@ export async function createTask(
   if (!res || !res.ok) {
     if (res) {
       console.error("[hubspot] createTask failed", { status: res.status });
-    }
-    return null;
-  }
-
-  try {
-    const data = (await res.json()) as { id?: string };
-    return data.id ?? null;
-  } catch {
-    return null;
-  }
-}
-
-// ============================================================================
-// 6. createEmailDraft — crée un email au statut DRAFT associé à un contact.
-// ============================================================================
-// `hs_timestamp` est obligatoire pour un objet email. @returns l'ID ou null.
-export async function createEmailDraft(
-  contactId: string,
-  subject: string,
-  body: string,
-  token: string,
-): Promise<string | null> {
-  if (!contactId || !token) return null;
-
-  const res = await hubspotFetch("/crm/v3/objects/emails", token, {
-    method: "POST",
-    body: {
-      properties: {
-        hs_email_subject: subject,
-        hs_email_text: body,
-        hs_email_status: "DRAFT",
-        // Obligatoire pour l'objet email HubSpot (sinon 400 VALIDATION_ERROR) :
-        // "EMAIL" = email sortant (commercial → prospect). Sans ça la création
-        // échouait silencieusement (email_pushed=false) alors que note/tâche OK.
-        hs_email_direction: "EMAIL",
-        hs_timestamp: Date.now(),
-      },
-      associations: contactAssociation(contactId, ASSOC_EMAIL_TO_CONTACT),
-    },
-  });
-
-  if (!res || !res.ok) {
-    if (res) {
-      console.error("[hubspot] createEmailDraft failed", {
-        status: res.status,
-      });
     }
     return null;
   }

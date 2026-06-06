@@ -26,8 +26,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { analyzeCall, estimateCostEur, ANALYSIS_MODEL } from '@/lib/claude'
 import type { CallAnalysis } from '@/lib/claude'
-import { searchContactByPhone, createNote, createTask, createEmailDraft } from '@/lib/hubspot'
-import { pickAndFillFollowupEmail } from '@/lib/email-templates'
+import { searchContactByPhone, createNote, createTask } from '@/lib/hubspot'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
 import type { AiProfileData } from '@/lib/validations'
@@ -59,22 +58,45 @@ function buildNoteSummary(a: CallAnalysis): string {
     .slice(0, 2)
     .map((w) => `• ${w.point}`)
     .join('\n')
+  // Points à intégrer à l'email de suivi (le cœur de la valeur côté commercial :
+  // ce qu'il a promis/qu'on lui a demandé + les engagements du prospect).
+  const followups = (a.followup_points ?? [])
+    .slice(0, 6)
+    .map((p) => `• ${p}`)
+    .join('\n')
 
   const parts = [
     `Analyse Aloalo — Score global : ${a.score_global}/100`,
     a.summary ? `\n${a.summary}` : '',
     strengths ? `\nPoints forts :\n${strengths}` : '',
     weaknesses ? `\nAxes d'amélioration :\n${weaknesses}` : '',
+    followups ? `\nÀ intégrer dans l'email de suivi :\n${followups}` : '',
   ].filter(Boolean)
 
-  return capWords(parts.join('\n'), 200)
+  return capWords(parts.join('\n'), 280)
 }
 
-// Tronque à `max` mots (garde-fou : la spec J16 demande 200 mots max).
+// Tronque à `max` mots (garde-fou contre une note trop longue dans la timeline).
 function capWords(text: string, max: number): string {
   const words = text.split(/\s+/)
   if (words.length <= max) return text
   return words.slice(0, max).join(' ') + '…'
+}
+
+/**
+ * Convertit une date IA (AAAA-MM-JJ) en timestamp ms pour l'échéance HubSpot.
+ * Garde-fous : date illisible OU dans le passé → repli à J+2. L'IA peut se
+ * tromper de date ; on ne crée jamais une tâche déjà en retard. On fixe l'heure
+ * à 08:00 UTC (échéance « matin », l'heure exacte importe peu pour une tâche).
+ */
+function resolveDueDateMs(dueDate: string | undefined | null): number {
+  const fallback = Date.now() + 2 * 24 * 60 * 60 * 1000
+  if (!dueDate || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return fallback
+  const parsed = new Date(`${dueDate}T08:00:00Z`).getTime()
+  if (Number.isNaN(parsed)) return fallback
+  // Plancher : demain (une tâche due aujourd'hui/hier n'a pas de sens en relance).
+  const minMs = Date.now() + 12 * 60 * 60 * 1000
+  return Math.max(parsed, minMs)
 }
 
 export async function POST(req: NextRequest) {
@@ -103,7 +125,7 @@ export async function POST(req: NextRequest) {
   // 1. Fetch le call
   const { data: call, error: fetchError } = await supabase
     .from('calls')
-    .select('id, organization_id, status, transcript_text, transcript_segments, callee_number, contact_name')
+    .select('id, organization_id, status, transcript_text, transcript_segments, callee_number, contact_name, started_at, created_at')
     .eq('id', callId)
     .single()
 
@@ -185,6 +207,14 @@ export async function POST(req: NextRequest) {
   // 4. Appel Claude — on passe aiProfile pour contextualiser le prompt si
   //    le profil de l'org est rempli. analyzeCall renvoie usedAiProfile=true
   //    uniquement si au moins un champ non-vide a été injecté.
+  // Date de référence pour les tâches datées par l'IA : quand l'appel a eu lieu
+  // (started_at), sinon sa création en base. Au format AAAA-MM-JJ.
+  const callDate = (
+    (call.started_at as string | null) ??
+    (call.created_at as string | null) ??
+    new Date().toISOString()
+  ).slice(0, 10)
+
   let analysis
   let usage
   let usedAiProfile = false
@@ -193,6 +223,7 @@ export async function POST(req: NextRequest) {
       call.transcript_text,
       segments,
       aiProfile as AiProfileData | null,
+      callDate,
     )
     analysis = result.analysis
     usage = result.usage
@@ -264,41 +295,35 @@ export async function POST(req: NextRequest) {
     `score=${analysis.score_global}, tokens=${usage.input_tokens}+${usage.output_tokens}, ${costEur}€, profil=${usedAiProfile ? 'oui' : 'non'}`
   )
 
-  // 8. Automation post-analyse (J17) — en arrière-plan via after().
+  // 8. Automation post-analyse — en arrière-plan via after().
   //    after() exécute ce travail APRÈS l'envoi de la réponse sans la bloquer ;
   //    Vercel garde la fonction vivante (un fire-and-forget nu serait coupé).
   //
-  //    a. Claude choisit + remplit l'email de suivi (modèle de vente) — TOUJOURS,
-  //       car c'est utile même sans HubSpot (visible sur la fiche appel Aloalo).
-  //    b. Si HubSpot est connecté ET qu'on retrouve le contact par son numéro :
-  //       note de synthèse + email brouillon + tâche de follow-up J+2.
+  //    Les points de suivi (followup_points) et les tâches contextuelles
+  //    (suggested_tasks) sont déjà persistés dans `analyses` (insert ci-dessus)
+  //    → visibles côté Aloalo même sans HubSpot.
   //
-  //    Le résultat est persisté dans calls.hubspot_sync_status pour l'afficher
-  //    sur /dashboard/calls/[id]. Aucune erreur (HubSpot/Claude down) ne remonte :
-  //    tout est try/catch + dégradé, le pipeline d'analyse reste OK quoi qu'il arrive.
+  //    Si HubSpot est connecté ET qu'on retrouve le contact par son numéro :
+  //      - note de synthèse (score + forts/faibles + points de suivi) ;
+  //      - 1 tâche HubSpot par suggested_task, datée intelligemment par l'IA
+  //        (titre + échéance + contexte), avec repli J+2 si l'IA n'en propose
+  //        aucune. Le résultat (ids + libellés + dates) va dans hubspot_sync_status.
+  //
+  //    Aucune erreur (HubSpot/Claude down) ne remonte : tout est try/catch +
+  //    dégradé, le pipeline d'analyse reste OK quoi qu'il arrive.
   const contactName = (call.contact_name as string | null) ?? null
   const phone = (call.callee_number as string | null) ?? null
   const hubspotToken = (org?.hubspot_token as string | null) ?? null
 
   after(async () => {
-    // Forme du jsonb : cf. migration 0010.
+    // Forme du jsonb : cf. migrations 0010 / 0011.
     const sync: Record<string, unknown> = {
       status: 'skipped',
       synced_at: new Date().toISOString(),
     }
 
     try {
-      // a. Email de suivi proposé (indépendant de HubSpot). On le stocke toujours
-      //    pour que la valeur démo (« l'IA choisit + remplit votre modèle ») soit
-      //    visible côté Aloalo même si le push HubSpot échoue ou est absent.
-      const email = await pickAndFillFollowupEmail({ analysis, contactName })
-      if (email) {
-        sync.template_name = email.templateName
-        sync.email_subject = email.subject
-        sync.email_body = email.body
-      }
-
-      // b. Push HubSpot — uniquement si org connectée + numéro à matcher.
+      // Push HubSpot — uniquement si org connectée + numéro à matcher.
       if (hubspotToken && phone) {
         const contact = await searchContactByPhone(phone, hubspotToken)
         if (!contact) {
@@ -307,7 +332,7 @@ export async function POST(req: NextRequest) {
           sync.status = 'synced'
           sync.contact_id = contact.id
 
-          // Note de synthèse (comportement historique J16).
+          // Note de synthèse (inclut désormais les points à mettre dans le mail).
           const noteId = await createNote(
             contact.id,
             buildNoteSummary(analysis),
@@ -315,30 +340,43 @@ export async function POST(req: NextRequest) {
           )
           if (noteId) sync.note_id = noteId
 
-          // Tâche de follow-up à J+2.
-          const dueDateMs = Date.now() + 2 * 24 * 60 * 60 * 1000
-          const taskTitle = `Follow-up ${contact.firstname ?? contactName ?? 'prospect'} (appel analysé Aloalo)`
-          const taskId = await createTask(contact.id, taskTitle, dueDateMs, hubspotToken)
-          if (taskId) sync.task_id = taskId
+          // Tâches contextuelles proposées par l'IA (max 3). Repli : une tâche
+          // J+2 si l'IA n'en a remonté aucune (garde-fou, jamais générique sinon).
+          const aiTasks = (analysis.suggested_tasks ?? []).slice(0, 3)
+          const tasksToCreate =
+            aiTasks.length > 0
+              ? aiTasks
+              : [
+                  {
+                    title: `Relancer ${contact.firstname ?? contactName ?? 'le prospect'} suite à l'appel`,
+                    due_date: '',
+                    reason: 'Relance de suivi par défaut (aucune action datée détectée dans l\'appel).',
+                  },
+                ]
 
-          // Email de suivi en brouillon sur la fiche contact.
-          // ⚠️ hs_email_status="DRAFT" n'est pas garanti par la doc HubSpot ;
-          // si le push échoue, email_pushed=false mais l'email proposé reste
-          // visible côté Aloalo (email_subject/email_body ci-dessus).
-          if (email) {
-            const emailId = await createEmailDraft(
+          const createdTasks: Array<Record<string, unknown>> = []
+          for (const t of tasksToCreate) {
+            const dueDateMs = resolveDueDateMs(t.due_date)
+            const taskId = await createTask(
               contact.id,
-              email.subject,
-              email.body,
+              t.title,
+              dueDateMs,
               hubspotToken,
+              t.reason,
             )
-            sync.email_pushed = Boolean(emailId)
-            if (emailId) sync.email_id = emailId
+            createdTasks.push({
+              title: t.title,
+              due_date: new Date(dueDateMs).toISOString(),
+              reason: t.reason,
+              task_id: taskId,
+              pushed: Boolean(taskId),
+            })
           }
+          sync.tasks = createdTasks
 
           console.log(
             `[hubspot] synchro post-analyse OK contactId=${contact.id}`,
-            `note=${sync.note_id ?? '–'} task=${sync.task_id ?? '–'} email=${sync.email_pushed ? 'oui' : 'non'}`,
+            `note=${sync.note_id ?? '–'} tasks=${createdTasks.filter((t) => t.pushed).length}/${createdTasks.length}`,
           )
         }
       }

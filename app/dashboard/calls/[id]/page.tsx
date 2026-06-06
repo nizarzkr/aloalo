@@ -3,10 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
+  CalendarClock,
   CheckCircle2,
   Clock,
   ExternalLink,
   FileQuestion,
+  ListChecks,
   Mail,
   Sparkles,
   UserX,
@@ -47,6 +49,13 @@ type CoachingAdvice = {
   priority: "high" | "medium" | "low";
 };
 
+// Tâche de suivi proposée par l'IA, telle que stockée dans analyses.suggested_tasks.
+type SuggestedTask = {
+  title: string;
+  due_date: string; // AAAA-MM-JJ
+  reason: string;
+};
+
 type TranscriptSegment = {
   speaker: string;
   text: string;
@@ -65,6 +74,14 @@ function formatDuration(totalSeconds: number | null) {
   const m = minutes % 60;
   if (h === 0) return `${m}min`;
   return `${h}h ${m}min`;
+}
+
+// Formate une échéance de tâche (ISO datetime OU AAAA-MM-JJ) en date FR lisible.
+function formatDueDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("fr-FR", { dateStyle: "long" });
 }
 
 // "0:42" — minutes:secondes (utilisé pour les timestamps de segments).
@@ -209,6 +226,8 @@ export default async function CallDetailPage({
         strengths,
         weaknesses,
         coaching_advice,
+        followup_points,
+        suggested_tasks,
         used_ai_profile
       )
     `,
@@ -261,20 +280,45 @@ export default async function CallDetailPage({
     .slice()
     .sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
 
-  // Synchro HubSpot + email de suivi proposé (J17). Présent uniquement sur les
-  // appels analysés après le branchement J17 ; null pour les anciens appels.
+  // Points à intégrer à l'email de suivi + tâches contextuelles, produits par
+  // l'IA et stockés dans `analyses`. Vides ([]) pour les anciens appels.
+  const followupPoints = asArray<string>(analysis?.followup_points);
+  const suggestedTasks = asArray<SuggestedTask>(analysis?.suggested_tasks);
+
+  // Synchro HubSpot (push réel). Présent uniquement sur les appels analysés
+  // après le branchement de l'automatisation ; null pour les anciens appels.
   const sync = (call.hubspot_sync_status ?? null) as {
     status?: string;
     contact_id?: string;
     note_id?: string;
-    task_id?: string;
-    email_id?: string;
-    email_pushed?: boolean;
-    template_name?: string;
-    email_subject?: string;
-    email_body?: string;
+    tasks?: Array<{
+      title?: string;
+      due_date?: string;
+      reason?: string;
+      task_id?: string | null;
+      pushed?: boolean;
+    }>;
   } | null;
-  const hasFollowupEmail = Boolean(sync?.email_subject && sync?.email_body);
+  // On affiche la section dès qu'il y a quelque chose d'utile à montrer.
+  const hasFollowupSection =
+    followupPoints.length > 0 || suggestedTasks.length > 0 || Boolean(sync);
+
+  // Tâches à afficher : si HubSpot a synchronisé, on montre les tâches RÉELLEMENT
+  // créées (dates validées + statut de push) ; sinon les propositions de l'IA.
+  const tasksToShow =
+    sync?.tasks && sync.tasks.length > 0
+      ? sync.tasks.map((t) => ({
+          title: t.title ?? "",
+          due_date: t.due_date ?? "",
+          reason: t.reason ?? "",
+          pushed: t.pushed,
+        }))
+      : suggestedTasks.map((t) => ({
+          title: t.title,
+          due_date: t.due_date,
+          reason: t.reason,
+          pushed: undefined as boolean | undefined,
+        }));
   // Lien direct vers la fiche contact HubSpot (objet contact = 0-1).
   const contactUrl =
     hubspotPortalId && sync?.contact_id
@@ -538,8 +582,8 @@ export default async function CallDetailPage({
         </section>
       ) : null}
 
-      {/* Suivi & synchro HubSpot (J17) — email de suivi proposé + push CRM */}
-      {status === "analyzed" && sync ? (
+      {/* Suivi & synchro HubSpot — points pour l'email de suivi + tâches datées */}
+      {status === "analyzed" && hasFollowupSection ? (
         <section className="mb-10">
           <Card>
             <CardHeader>
@@ -548,13 +592,13 @@ export default async function CallDetailPage({
                 Suivi &amp; synchro HubSpot
               </CardTitle>
               <CardDescription>
-                Email de suivi proposé automatiquement à partir de vos modèles,
-                personnalisé selon cet appel.
+                Points à intégrer à votre email de suivi et tâches de relance
+                déduites de cet appel.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               {/* Statut de la synchro HubSpot */}
-              {sync.status === "synced" ? (
+              {sync?.status === "synced" ? (
                 <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
                   <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
                     <CheckCircle2 className="size-4" aria-hidden />
@@ -562,11 +606,9 @@ export default async function CallDetailPage({
                   </p>
                   <ul className="space-y-1 text-sm text-muted-foreground">
                     <li>{sync.note_id ? "✓" : "—"} Note de synthèse</li>
-                    <li>{sync.task_id ? "✓" : "—"} Tâche de follow-up (J+2)</li>
                     <li>
-                      {sync.email_pushed
-                        ? "✓ Email de suivi déposé en brouillon"
-                        : "○ Email de suivi proposé (à copier ci-dessous)"}
+                      {(sync.tasks?.filter((t) => t.pushed).length ?? 0)} tâche(s)
+                      de suivi créée(s)
                     </li>
                   </ul>
                   {contactUrl ? (
@@ -581,13 +623,13 @@ export default async function CallDetailPage({
                     </a>
                   ) : null}
                 </div>
-              ) : sync.status === "no_contact" ? (
+              ) : sync?.status === "no_contact" ? (
                 <p className="flex items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 text-sm text-orange-700 dark:text-orange-300">
                   <UserX className="size-4 shrink-0" aria-hidden />
-                  Aucun contact HubSpot trouvé pour ce numéro — l&apos;email de
-                  suivi reste disponible ci-dessous.
+                  Aucun contact HubSpot trouvé pour ce numéro — les points et
+                  tâches ci-dessous restent disponibles ici.
                 </p>
-              ) : sync.status === "skipped" ? (
+              ) : sync?.status === "skipped" ? (
                 <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
                   HubSpot n&apos;est pas connecté.{" "}
                   <Link
@@ -596,45 +638,66 @@ export default async function CallDetailPage({
                   >
                     Connecter HubSpot
                   </Link>{" "}
-                  pour pousser automatiquement note, tâche et brouillon d&apos;email.
+                  pour pousser automatiquement note de synthèse et tâches de suivi.
                 </p>
               ) : null}
 
-              {/* Email de suivi proposé — toujours affiché s'il a été généré,
-                  quel que soit le résultat du push HubSpot. */}
-              {hasFollowupEmail ? (
+              {/* Points à intégrer dans l'email de suivi (depuis l'analyse IA). */}
+              {followupPoints.length > 0 ? (
                 <div className="space-y-3 rounded-lg border p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium">Email de suivi proposé</p>
-                    {sync.template_name ? (
-                      <Badge variant="outline" className="gap-1">
-                        <Sparkles className="size-3" aria-hidden />
-                        Modèle : {sync.template_name}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <div className="space-y-1 text-sm">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Objet
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      <ListChecks className="size-4 text-muted-foreground" aria-hidden />
+                      À intégrer dans votre email de suivi
                     </p>
-                    <p className="font-medium text-foreground">
-                      {sync.email_subject}
-                    </p>
-                  </div>
-                  <div className="space-y-1 text-sm">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Message
-                    </p>
-                    <p className="whitespace-pre-wrap leading-relaxed text-foreground">
-                      {sync.email_body}
-                    </p>
-                  </div>
-                  <div className="flex justify-end">
                     <CopyButton
-                      value={`Objet : ${sync.email_subject}\n\n${sync.email_body}`}
-                      label="Copier l'email"
+                      value={followupPoints.map((p) => `• ${p}`).join("\n")}
+                      label="Copier"
                     />
                   </div>
+                  <ul className="space-y-1.5 text-sm text-foreground">
+                    {followupPoints.map((point, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span className="select-none text-muted-foreground">•</span>
+                        <span className="leading-relaxed">{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {/* Tâches de suivi proposées par l'IA, datées selon l'appel. */}
+              {tasksToShow.length > 0 ? (
+                <div className="space-y-3 rounded-lg border p-4">
+                  <p className="flex items-center gap-2 text-sm font-medium">
+                    <CalendarClock className="size-4 text-muted-foreground" aria-hidden />
+                    Tâches de suivi proposées
+                  </p>
+                  <ul className="space-y-3">
+                    {tasksToShow.map((task, i) => (
+                      <li key={i} className="space-y-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm font-medium leading-snug text-foreground">
+                            {task.title}
+                          </p>
+                          <Badge variant="outline" className="shrink-0 gap-1">
+                            <CalendarClock className="size-3" aria-hidden />
+                            {formatDueDate(task.due_date)}
+                          </Badge>
+                        </div>
+                        {task.reason ? (
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            {task.reason}
+                          </p>
+                        ) : null}
+                        {task.pushed === false ? (
+                          <p className="text-xs text-orange-600 dark:text-orange-400">
+                            Non créée dans HubSpot (réessayez plus tard).
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
             </CardContent>
