@@ -63,9 +63,9 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 const ROLE_BADGE: Record<string, string> = {
-  owner: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200",
-  manager: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
-  sales: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200",
+  owner: "bg-mint text-foreground",
+  manager: "bg-secondary text-foreground",
+  sales: "bg-muted text-muted-foreground",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -172,7 +172,7 @@ export function UserProfile({
       {/* Header */}
       <header className="mb-8 flex flex-wrap items-center gap-4">
         <Avatar size="lg" className="size-14">
-          <AvatarFallback className="bg-gradient-to-br from-blue-500 to-violet-500 text-base font-semibold text-white">
+          <AvatarFallback className="bg-foreground text-base font-semibold text-background">
             {initials}
           </AvatarFallback>
         </Avatar>

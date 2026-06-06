@@ -86,9 +86,9 @@ const PLANS: {
 // Couleurs des badges plan — overrides volontaires sur la variant Badge.
 const PLAN_BADGE_CLASS: Record<PlanKey, string> = {
   free: "bg-muted text-muted-foreground",
-  starter: "bg-blue-100 text-blue-700",
-  growth: "bg-violet-100 text-violet-700",
-  scale: "bg-amber-100 text-amber-800",
+  starter: "bg-secondary text-foreground",
+  growth: "bg-secondary text-foreground",
+  scale: "bg-foreground text-background",
 };
 
 const PLAN_LABEL: Record<PlanKey, string> = {
@@ -106,8 +106,8 @@ const STATUS_LABEL: Record<DbStatus, string> = {
 };
 
 const STATUS_BADGE_CLASS: Record<DbStatus, string> = {
-  trial: "bg-blue-100 text-blue-700",
-  active: "bg-emerald-100 text-emerald-700",
+  trial: "bg-secondary text-foreground",
+  active: "bg-mint text-foreground",
   past_due: "bg-amber-100 text-amber-800",
   canceled: "bg-muted text-muted-foreground",
 };
@@ -327,9 +327,7 @@ export default async function BillingPage({
                 <div className="flex items-center justify-between">
                   <CardTitle>{plan.name}</CardTitle>
                   {isCurrent ? (
-                    <Badge className={PLAN_BADGE_CLASS[plan.key]}>
-                      Plan actuel
-                    </Badge>
+                    <Badge className="bg-mint text-foreground">Plan actuel</Badge>
                   ) : null}
                 </div>
                 <CardDescription className="text-base font-semibold text-foreground">

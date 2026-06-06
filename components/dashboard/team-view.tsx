@@ -76,9 +76,9 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 const ROLE_BADGE: Record<string, string> = {
-  owner: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200",
-  manager: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
-  sales: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200",
+  owner: "bg-mint text-foreground",
+  manager: "bg-secondary text-foreground",
+  sales: "bg-muted text-muted-foreground",
 };
 
 function roleLabel(role: string) {
