@@ -9,7 +9,6 @@ import {
   ExternalLink,
   FileQuestion,
   ListChecks,
-  Mail,
   Sparkles,
   UserX,
 } from "lucide-react";
@@ -33,6 +32,7 @@ import { EmptyState } from "@/components/dashboard/empty-state";
 import { UpgradeBanner } from "@/components/dashboard/upgrade-banner";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { HubspotRefreshButton } from "@/components/dashboard/hubspot-refresh-button";
+import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -419,10 +419,15 @@ export default async function CallDetailPage({
         </section>
       ) : null}
 
-      {/* Scores — uniquement si l'appel est analysé */}
+      {/* ====================== Scoring ====================== */}
       {status === "analyzed" && analysis ? (
-        <section className="mb-10 grid gap-6">
-          {/* Score global */}
+        <CollapsibleSection
+          icon="gauge"
+          title="Scoring"
+          description="Score global et performance par étape de l'appel."
+        >
+          <div className="grid gap-6">
+            {/* Score global */}
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
               <div className="space-y-1.5">
@@ -451,7 +456,7 @@ export default async function CallDetailPage({
                     >
                       <Badge
                         variant="outline"
-                        className="cursor-pointer gap-1 border-emerald-500/50 bg-emerald-500/10 text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300"
+                        className="cursor-pointer gap-1 border-foreground/10 bg-mint text-foreground transition-colors hover:bg-mint/80"
                       >
                         <Sparkles className="size-3" aria-hidden />
                         Analyse personnalisée ✓
@@ -489,12 +494,33 @@ export default async function CallDetailPage({
               );
             })}
           </div>
-        </section>
+          </div>
+        </CollapsibleSection>
       ) : null}
 
-      {/* Points forts + Axes d'amélioration */}
+      {/* ====================== Analyse ====================== */}
       {status === "analyzed" && analysis ? (
-        <section className="mb-10 grid gap-4 md:grid-cols-2">
+        <CollapsibleSection
+          icon="lightbulb"
+          title="Analyse"
+          description="Résumé de l'appel, points forts, axes d'amélioration et coaching."
+        >
+          {/* Résumé de l'appel (vue d'ensemble en premier) */}
+          {summary ? (
+            <Card className="mb-4">
+              <CardHeader>
+                <CardTitle className="text-base">Résumé de l&apos;appel</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm leading-relaxed text-foreground">
+                  {summary}
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {/* Points forts + Axes d'amélioration */}
+          <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Points forts</CardTitle>
@@ -554,13 +580,11 @@ export default async function CallDetailPage({
               )}
             </CardContent>
           </Card>
-        </section>
-      ) : null}
+          </div>
 
-      {/* Conseils de coaching */}
-      {status === "analyzed" && coaching.length > 0 ? (
-        <section className="mb-10">
-          <Card>
+          {/* Conseils de coaching */}
+          {coaching.length > 0 ? (
+            <Card className="mt-4">
             <CardHeader>
               <CardTitle className="text-base">Conseils de coaching</CardTitle>
               <CardDescription>
@@ -591,42 +615,20 @@ export default async function CallDetailPage({
                 ))}
               </ul>
             </CardContent>
-          </Card>
-        </section>
+            </Card>
+          ) : null}
+        </CollapsibleSection>
       ) : null}
 
-      {/* Résumé de l'appel */}
-      {status === "analyzed" && summary ? (
-        <section className="mb-10">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Résumé de l&apos;appel</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm leading-relaxed text-foreground">{summary}</p>
-            </CardContent>
-          </Card>
-        </section>
-      ) : null}
-
-      {/* Suivi & synchro HubSpot — points pour l'email de suivi + tâches datées */}
+      {/* ================= Prochaines étapes ================= */}
       {status === "analyzed" && hasFollowupSection ? (
-        <section className="mb-10">
+        <CollapsibleSection
+          icon="list-todo"
+          title="Prochaines étapes"
+          description="Points à intégrer à votre email de suivi et tâches de relance déduites de cet appel."
+          action={<HubspotRefreshButton callId={call.id as string} />}
+        >
           <Card>
-            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
-              <div className="space-y-1.5">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Mail className="size-4" aria-hidden />
-                  Suivi &amp; synchro HubSpot
-                </CardTitle>
-                <CardDescription>
-                  Points à intégrer à votre email de suivi et tâches de relance
-                  déduites de cet appel.
-                </CardDescription>
-              </div>
-              {/* Re-tire les infos HubSpot (contact / entreprise / deal) à la demande. */}
-              <HubspotRefreshButton callId={call.id as string} />
-            </CardHeader>
             <CardContent className="space-y-5">
               {/* Statut de la synchro HubSpot */}
               {sync?.status === "synced" ? (
@@ -755,18 +757,17 @@ export default async function CallDetailPage({
               ) : null}
             </CardContent>
           </Card>
-        </section>
+        </CollapsibleSection>
       ) : null}
 
-      {/* Transcript */}
-      <section className="mb-10">
+      {/* ==================== Transcription ==================== */}
+      <CollapsibleSection
+        icon="messages-square"
+        title="Transcription"
+        description="Conversation diarisée par AssemblyAI."
+        defaultOpen={false}
+      >
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Transcript</CardTitle>
-            <CardDescription>
-              Conversation diarisée par AssemblyAI.
-            </CardDescription>
-          </CardHeader>
           <CardContent>
             {segments.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
@@ -801,7 +802,7 @@ export default async function CallDetailPage({
                         className={cn(
                           "max-w-[90%] rounded-2xl px-3 py-2 text-sm md:max-w-[80%]",
                           isCommercial
-                            ? "bg-blue-50 text-blue-950 dark:bg-blue-950/40 dark:text-blue-50"
+                            ? "bg-mint text-foreground"
                             : "bg-muted text-foreground",
                         )}
                       >
@@ -814,7 +815,7 @@ export default async function CallDetailPage({
             )}
           </CardContent>
         </Card>
-      </section>
+      </CollapsibleSection>
     </div>
   );
 }
