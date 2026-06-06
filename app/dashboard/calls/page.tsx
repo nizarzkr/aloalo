@@ -121,7 +121,7 @@ export default async function CallsListPage({
   let query = supabase
     .from("calls")
     .select(
-      `id, callee_number, contact_name, started_at, created_at, duration_seconds, status, ${analysesEmbed}`,
+      `id, callee_number, contact_name, company_name, deal_name, started_at, created_at, duration_seconds, status, ${analysesEmbed}`,
       { count: "exact" },
     )
     .eq("organization_id", orgFilter)
@@ -236,6 +236,15 @@ export default async function CallsListPage({
                               call.callee_number ??
                               "Appel sans contact"}
                           </p>
+                          {/* Entreprise · Deal (HubSpot) si l'appel est enrichi. */}
+                          {[call.company_name, call.deal_name].filter(Boolean)
+                            .length > 0 ? (
+                            <p className="truncate text-xs font-medium text-muted-foreground">
+                              {[call.company_name, call.deal_name]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                          ) : null}
                           <p className="text-xs text-muted-foreground">
                             {new Date(dateRef).toLocaleString("fr-FR", {
                               day: "2-digit",

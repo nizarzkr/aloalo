@@ -41,15 +41,24 @@ export type HubspotDeal = {
 export type HubspotConnectionStatus = "connected" | "invalid" | "unknown";
 
 // ----------------------------------------------------------------------------
-// IDs d'association HUBSPOT_DEFINED (objet → contact). Ces IDs sont des
-// constantes du référentiel HubSpot, pas des valeurs propres à notre portail.
-//   note  → contact : 202
-//   task  → contact : 204
-// Une « association » lie un objet (note/tâche) à un contact pour qu'il
-// apparaisse dans la timeline de ce contact côté HubSpot.
+// IDs d'association HUBSPOT_DEFINED (objet → contact / objet → deal). Ces IDs
+// sont des constantes du référentiel HubSpot, pas des valeurs propres à notre
+// portail.
+//   note  → contact : 202     note  → deal : 214
+//   task  → contact : 204     task  → deal : 216
+// Une « association » lie un objet (note/tâche) à un contact OU à un deal pour
+// qu'il apparaisse dans la timeline de cet objet côté HubSpot.
+//
+// Choix produit (J18bis) : on rattache en priorité au DEAL (l'affaire en cours),
+// avec repli sur le CONTACT si le contact n'a aucun deal associé.
 // ----------------------------------------------------------------------------
 const ASSOC_NOTE_TO_CONTACT = 202;
 const ASSOC_TASK_TO_CONTACT = 204;
+const ASSOC_NOTE_TO_DEAL = 214;
+const ASSOC_TASK_TO_DEAL = 216;
+
+// Cible d'un rattachement note/tâche : soit un contact, soit un deal.
+export type HubspotTarget = { type: "contact" | "deal"; id: string };
 
 // ----------------------------------------------------------------------------
 // Helper interne : un seul point de sortie réseau vers HubSpot.
@@ -84,15 +93,21 @@ async function hubspotFetch(
   }
 }
 
-// Construit le bloc d'association standard objet → contact attendu par l'API v3.
-function contactAssociation(contactId: string, associationTypeId: number) {
+// Construit le bloc d'association standard objet → (contact|deal) attendu par
+// l'API v3. On choisit l'associationTypeId selon le type de la cible.
+function targetAssociation(
+  target: HubspotTarget,
+  toContactTypeId: number,
+  toDealTypeId: number,
+) {
   return [
     {
-      to: { id: contactId },
+      to: { id: target.id },
       types: [
         {
           associationCategory: "HUBSPOT_DEFINED",
-          associationTypeId,
+          associationTypeId:
+            target.type === "deal" ? toDealTypeId : toContactTypeId,
         },
       ],
     },
@@ -158,6 +173,165 @@ export async function searchContactByPhone(
   } catch {
     return null;
   }
+}
+
+// ============================================================================
+// 1ter. getContactCompany — entreprise (company) associée à un contact.
+// ============================================================================
+// Chemin : association v4 contacts→companies → 1er ID → on lit son `name`.
+// Un contact peut être associé à 0, 1 ou plusieurs entreprises ; on prend la
+// première (cas dominant = 1 entreprise par contact). @returns {id, name} ou null.
+export type HubspotCompany = { id: string; name: string | null };
+
+export async function getContactCompany(
+  contactId: string,
+  token: string,
+): Promise<HubspotCompany | null> {
+  if (!contactId || !token) return null;
+
+  const assocRes = await hubspotFetch(
+    `/crm/v4/objects/contacts/${encodeURIComponent(contactId)}/associations/companies?limit=1`,
+    token,
+  );
+  if (!assocRes || !assocRes.ok) return null;
+
+  let companyId = "";
+  try {
+    const data = (await assocRes.json()) as {
+      results?: Array<{ toObjectId?: string | number }>;
+    };
+    const first = data.results?.[0];
+    companyId = first?.toObjectId != null ? String(first.toObjectId) : "";
+  } catch {
+    return null;
+  }
+  if (!companyId) return null;
+
+  const res = await hubspotFetch(
+    `/crm/v3/objects/companies/${encodeURIComponent(companyId)}?properties=name`,
+    token,
+  );
+  if (!res || !res.ok) return null;
+
+  try {
+    const data = (await res.json()) as {
+      id: string;
+      properties?: Record<string, string | null>;
+    };
+    return { id: data.id, name: data.properties?.name ?? null };
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
+// 1quater. getMostRecentDealForContact — deal le plus récent du contact.
+// ============================================================================
+// Choix produit (J18bis) : quand un contact a plusieurs deals, on prend le plus
+// récemment modifié (tri sur hs_lastmodifieddate desc), y compris s'il est déjà
+// gagné/perdu. Chemin : association v4 contacts→deals → batch read des deals →
+// tri local. @returns le deal le plus récent ou null (aucun deal / erreur).
+export async function getMostRecentDealForContact(
+  contactId: string,
+  token: string,
+): Promise<HubspotDeal | null> {
+  if (!contactId || !token) return null;
+
+  // 1. IDs des deals associés au contact.
+  const assocRes = await hubspotFetch(
+    `/crm/v4/objects/contacts/${encodeURIComponent(contactId)}/associations/deals?limit=100`,
+    token,
+  );
+  if (!assocRes || !assocRes.ok) return null;
+
+  let dealIds: string[] = [];
+  try {
+    const data = (await assocRes.json()) as {
+      results?: Array<{ toObjectId?: string | number }>;
+    };
+    dealIds = (data.results ?? [])
+      .map((r) => (r.toObjectId != null ? String(r.toObjectId) : ""))
+      .filter((id) => id.length > 0);
+  } catch {
+    return null;
+  }
+  if (dealIds.length === 0) return null;
+
+  // 2. Batch read des deals avec la date de dernière modif pour trier.
+  const readRes = await hubspotFetch("/crm/v3/objects/deals/batch/read", token, {
+    method: "POST",
+    body: {
+      properties: [
+        "dealname",
+        "dealstage",
+        "amount",
+        "closedate",
+        "hs_lastmodifieddate",
+      ],
+      inputs: dealIds.map((id) => ({ id })),
+    },
+  });
+  if (!readRes || !readRes.ok) return null;
+
+  try {
+    const data = (await readRes.json()) as {
+      results?: Array<{ id: string; properties?: Record<string, string | null> }>;
+    };
+    const deals = data.results ?? [];
+    if (deals.length === 0) return null;
+
+    // Tri décroissant par date de dernière modif (le plus récent en tête).
+    deals.sort((a, b) => {
+      const ta = Date.parse(a.properties?.hs_lastmodifieddate ?? "") || 0;
+      const tb = Date.parse(b.properties?.hs_lastmodifieddate ?? "") || 0;
+      return tb - ta;
+    });
+
+    const top = deals[0];
+    const p = top.properties ?? {};
+    return {
+      id: top.id,
+      dealname: p.dealname ?? null,
+      dealstage: p.dealstage ?? null,
+      amount: p.amount ?? null,
+      closedate: p.closedate ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
+// 1quinquies. resolveContactContext — résout un numéro vers contact + entreprise
+//             + deal le plus récent, en une seule passe (J18bis).
+// ============================================================================
+// Sert à la fois à l'enrichissement d'affichage (nom/entreprise/deal dans Aloalo)
+// ET au choix de la cible des notes/tâches (deal en priorité, sinon contact).
+// Tout est dégradé : si une sous-requête échoue, le champ correspondant est null.
+// @returns { contact, company, deal } ; contact=null si aucun contact pour ce numéro.
+export type ContactContext = {
+  contact: HubspotContact | null;
+  company: HubspotCompany | null;
+  deal: HubspotDeal | null;
+};
+
+export async function resolveContactContext(
+  phone: string,
+  token: string,
+): Promise<ContactContext> {
+  const empty: ContactContext = { contact: null, company: null, deal: null };
+  if (!phone || !token) return empty;
+
+  const contact = await searchContactByPhone(phone, token);
+  if (!contact) return empty;
+
+  // Entreprise + deal en parallèle (indépendants l'un de l'autre).
+  const [company, deal] = await Promise.all([
+    getContactCompany(contact.id, token),
+    getMostRecentDealForContact(contact.id, token),
+  ]);
+
+  return { contact, company, deal };
 }
 
 // ============================================================================
@@ -385,16 +559,17 @@ export async function createTimelineEvent(
 }
 
 // ============================================================================
-// 4. createNote — crée une note associée à un contact.
+// 4. createNote — crée une note associée à un contact OU à un deal.
 // ============================================================================
 // `hs_timestamp` est OBLIGATOIRE pour une note (date d'horodatage). On utilise
-// l'instant présent. @returns l'ID de la note créée ou null.
+// l'instant présent. @param target — { type:'contact'|'deal', id }.
+// @returns l'ID de la note créée ou null.
 export async function createNote(
-  contactId: string,
+  target: HubspotTarget,
   content: string,
   token: string,
 ): Promise<string | null> {
-  if (!contactId || !token) return null;
+  if (!target?.id || !token) return null;
 
   const res = await hubspotFetch("/crm/v3/objects/notes", token, {
     method: "POST",
@@ -403,7 +578,11 @@ export async function createNote(
         hs_note_body: content,
         hs_timestamp: Date.now(),
       },
-      associations: contactAssociation(contactId, ASSOC_NOTE_TO_CONTACT),
+      associations: targetAssociation(
+        target,
+        ASSOC_NOTE_TO_CONTACT,
+        ASSOC_NOTE_TO_DEAL,
+      ),
     },
   });
 
@@ -423,20 +602,21 @@ export async function createNote(
 }
 
 // ============================================================================
-// 5. createTask — crée une tâche (à faire) associée à un contact.
+// 5. createTask — crée une tâche (à faire) associée à un contact OU à un deal.
 // ============================================================================
+// @param target — { type:'contact'|'deal', id } : objet sur lequel poser la tâche.
 // @param dueDateMs — échéance en millisecondes epoch (hs_timestamp).
 // @param body — contexte de la tâche (hs_task_body), optionnel. Sert à donner
 //   au commercial le « pourquoi » de la tâche (raison déduite de l'appel).
 // @returns l'ID de la tâche créée ou null.
 export async function createTask(
-  contactId: string,
+  target: HubspotTarget,
   title: string,
   dueDateMs: number,
   token: string,
   body?: string,
 ): Promise<string | null> {
-  if (!contactId || !token) return null;
+  if (!target?.id || !token) return null;
 
   const res = await hubspotFetch("/crm/v3/objects/tasks", token, {
     method: "POST",
@@ -447,7 +627,11 @@ export async function createTask(
         hs_timestamp: dueDateMs,
         ...(body ? { hs_task_body: body } : {}),
       },
-      associations: contactAssociation(contactId, ASSOC_TASK_TO_CONTACT),
+      associations: targetAssociation(
+        target,
+        ASSOC_TASK_TO_CONTACT,
+        ASSOC_TASK_TO_DEAL,
+      ),
     },
   });
 

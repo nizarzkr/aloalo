@@ -26,7 +26,9 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { analyzeCall, estimateCostEur, ANALYSIS_MODEL } from '@/lib/claude'
 import type { CallAnalysis } from '@/lib/claude'
-import { searchContactByPhone, createNote, createTask } from '@/lib/hubspot'
+import { createNote, createTask } from '@/lib/hubspot'
+import type { HubspotTarget } from '@/lib/hubspot'
+import { enrichCallFromHubspot } from '@/lib/hubspot-sync'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
 import type { AiProfileData } from '@/lib/validations'
@@ -325,18 +327,40 @@ export async function POST(req: NextRequest) {
     try {
       // Push HubSpot — uniquement si org connectée + numéro à matcher.
       if (hubspotToken && phone) {
-        const contact = await searchContactByPhone(phone, hubspotToken)
+        // Résout contact + entreprise + deal le plus récent ET enrichit les
+        // colonnes d'affichage de l'appel (nom/entreprise/deal visibles dans
+        // Aloalo). Réutilise le contexte renvoyé pour cibler la synchro.
+        const ctx = await enrichCallFromHubspot(
+          supabase,
+          callId,
+          phone,
+          hubspotToken,
+        )
+        const contact = ctx.contact
+
         if (!contact) {
           sync.status = 'no_contact'
         } else {
           sync.status = 'synced'
           sync.contact_id = contact.id
 
+          // Cible de la note + des tâches : le deal le plus récent en priorité
+          // (l'affaire en cours), sinon repli sur le contact (décision J18bis).
+          const target: HubspotTarget = ctx.deal
+            ? { type: 'deal', id: ctx.deal.id }
+            : { type: 'contact', id: contact.id }
+          sync.target = target.type
+          if (ctx.deal) {
+            sync.deal_id = ctx.deal.id
+            sync.deal_name = ctx.deal.dealname ?? null
+          }
+          if (ctx.company) sync.company_name = ctx.company.name ?? null
+
           // Note de synthèse (inclut désormais les points à mettre dans le mail).
           // Échec non bloquant : on tente quand même les tâches ensuite.
           try {
             const noteId = await createNote(
-              contact.id,
+              target,
               buildNoteSummary(analysis),
               hubspotToken,
             )
@@ -366,7 +390,7 @@ export async function POST(req: NextRequest) {
             try {
               const dueDateMs = resolveDueDateMs(t.due_date)
               const taskId = await createTask(
-                contact.id,
+                target,
                 t.title,
                 dueDateMs,
                 hubspotToken,
@@ -391,6 +415,7 @@ export async function POST(req: NextRequest) {
 
           console.log(
             `[hubspot] synchro post-analyse OK contactId=${contact.id}`,
+            `cible=${target.type}${ctx.deal ? `(${ctx.deal.id})` : ''}`,
             `note=${sync.note_id ?? '–'} tasks=${createdTasks.filter((t) => t.pushed).length}/${createdTasks.length}`,
           )
         }

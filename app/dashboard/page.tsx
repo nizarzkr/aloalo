@@ -109,7 +109,7 @@ export default async function DashboardPage() {
       supabase
         .from("calls")
         .select(
-          "id, started_at, created_at, duration_seconds, status, contact_name, callee_number, analyses ( score_global )",
+          "id, started_at, created_at, duration_seconds, status, contact_name, callee_number, company_name, deal_name, analyses ( score_global )",
         )
         .eq("organization_id", orgFilter)
         .order("created_at", { ascending: false })
@@ -221,6 +221,15 @@ export default async function DashboardPage() {
                               call.callee_number ??
                               "Appel sans contact"}
                           </p>
+                          {/* Entreprise · Deal (HubSpot) si l'appel est enrichi. */}
+                          {[call.company_name, call.deal_name].filter(Boolean)
+                            .length > 0 ? (
+                            <p className="truncate text-xs font-medium text-muted-foreground">
+                              {[call.company_name, call.deal_name]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                          ) : null}
                           <p className="text-xs text-muted-foreground">
                             {new Date(dateRef).toLocaleString("fr-FR", {
                               day: "2-digit",

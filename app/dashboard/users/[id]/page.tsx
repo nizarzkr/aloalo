@@ -51,7 +51,7 @@ export default async function UserProfilePage({
     supabase
       .from("calls")
       .select(
-        "id, callee_number, contact_name, started_at, created_at, duration_seconds, status, analyses ( score_global )",
+        "id, callee_number, contact_name, company_name, deal_name, started_at, created_at, duration_seconds, status, analyses ( score_global )",
       )
       .eq("organization_id", orgId)
       .eq("user_id", id)
@@ -101,6 +101,8 @@ export default async function UserProfilePage({
           id: c.id,
           callee_number: c.callee_number,
           contact_name: c.contact_name,
+          company_name: c.company_name,
+          deal_name: c.deal_name,
           started_at: c.started_at,
           created_at: c.created_at,
           duration_seconds: c.duration_seconds,

@@ -39,6 +39,8 @@ type Call = {
   id: string;
   callee_number: string | null;
   contact_name: string | null;
+  company_name: string | null;
+  deal_name: string | null;
   started_at: string | null;
   created_at: string;
   duration_seconds: number | null;
@@ -294,6 +296,15 @@ export function UserProfile({
                               call.callee_number ??
                               "Appel sans contact"}
                           </p>
+                          {/* Entreprise · Deal (HubSpot) si l'appel est enrichi. */}
+                          {[call.company_name, call.deal_name].filter(Boolean)
+                            .length > 0 ? (
+                            <p className="truncate text-xs font-medium text-muted-foreground">
+                              {[call.company_name, call.deal_name]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                          ) : null}
                           <p className="text-xs text-muted-foreground">
                             {new Date(dateRef).toLocaleString("fr-FR", {
                               day: "2-digit",

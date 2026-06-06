@@ -32,6 +32,7 @@ import {
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { UpgradeBanner } from "@/components/dashboard/upgrade-banner";
 import { CopyButton } from "@/components/dashboard/copy-button";
+import { HubspotRefreshButton } from "@/components/dashboard/hubspot-refresh-button";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -208,6 +209,10 @@ export default async function CallDetailPage({
       id,
       contact_name,
       callee_number,
+      company_name,
+      deal_name,
+      deal_id,
+      hubspot_contact_id,
       started_at,
       created_at,
       duration_seconds,
@@ -251,6 +256,12 @@ export default async function CallDetailPage({
   const dateRef = call.started_at ?? call.created_at;
   const contactDisplay =
     call.contact_name ?? call.callee_number ?? "Appel sans contact";
+  // Infos enrichies depuis HubSpot (null pour les appels non enrichis).
+  const companyName = (call.company_name ?? null) as string | null;
+  const dealName = (call.deal_name ?? null) as string | null;
+  const dealId = (call.deal_id ?? null) as string | null;
+  // Sous-titre « Entreprise · Deal » sous le nom du contact (parties présentes).
+  const subtitleParts = [companyName, dealName].filter(Boolean) as string[];
 
   const segments = asArray<TranscriptSegment>(call.transcript_segments);
 
@@ -291,6 +302,10 @@ export default async function CallDetailPage({
     status?: string;
     contact_id?: string;
     note_id?: string;
+    target?: "deal" | "contact";
+    deal_id?: string;
+    deal_name?: string | null;
+    company_name?: string | null;
     tasks?: Array<{
       title?: string;
       due_date?: string;
@@ -320,9 +335,15 @@ export default async function CallDetailPage({
           pushed: undefined as boolean | undefined,
         }));
   // Lien direct vers la fiche contact HubSpot (objet contact = 0-1).
+  const contactId = call.hubspot_contact_id ?? sync?.contact_id ?? null;
   const contactUrl =
-    hubspotPortalId && sync?.contact_id
-      ? `https://app.hubspot.com/contacts/${hubspotPortalId}/record/0-1/${sync.contact_id}`
+    hubspotPortalId && contactId
+      ? `https://app.hubspot.com/contacts/${hubspotPortalId}/record/0-1/${contactId}`
+      : null;
+  // Lien direct vers la fiche deal HubSpot (objet deal = 0-3).
+  const dealUrl =
+    hubspotPortalId && dealId
+      ? `https://app.hubspot.com/contacts/${hubspotPortalId}/record/0-3/${dealId}`
       : null;
 
   return (
@@ -345,6 +366,12 @@ export default async function CallDetailPage({
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             {contactDisplay}
           </h1>
+          {/* Entreprise · Deal (depuis HubSpot) — affiché seulement si enrichi. */}
+          {subtitleParts.length > 0 ? (
+            <p className="mt-0.5 text-sm font-medium text-foreground/80">
+              {subtitleParts.join(" · ")}
+            </p>
+          ) : null}
           <p className="mt-1 text-sm text-muted-foreground">
             {new Date(dateRef).toLocaleString("fr-FR", {
               dateStyle: "long",
@@ -586,15 +613,19 @@ export default async function CallDetailPage({
       {status === "analyzed" && hasFollowupSection ? (
         <section className="mb-10">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Mail className="size-4" aria-hidden />
-                Suivi &amp; synchro HubSpot
-              </CardTitle>
-              <CardDescription>
-                Points à intégrer à votre email de suivi et tâches de relance
-                déduites de cet appel.
-              </CardDescription>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+              <div className="space-y-1.5">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Mail className="size-4" aria-hidden />
+                  Suivi &amp; synchro HubSpot
+                </CardTitle>
+                <CardDescription>
+                  Points à intégrer à votre email de suivi et tâches de relance
+                  déduites de cet appel.
+                </CardDescription>
+              </div>
+              {/* Re-tire les infos HubSpot (contact / entreprise / deal) à la demande. */}
+              <HubspotRefreshButton callId={call.id as string} />
             </CardHeader>
             <CardContent className="space-y-5">
               {/* Statut de la synchro HubSpot */}
@@ -610,18 +641,40 @@ export default async function CallDetailPage({
                       {(sync.tasks?.filter((t) => t.pushed).length ?? 0)} tâche(s)
                       de suivi créée(s)
                     </li>
+                    {/* Où la synchro a été posée : deal (affaire) ou contact. */}
+                    {sync.target ? (
+                      <li>
+                        Rattaché au{" "}
+                        {sync.target === "deal"
+                          ? `deal${dealName ? ` « ${dealName} »` : ""}`
+                          : "contact"}
+                      </li>
+                    ) : null}
                   </ul>
-                  {contactUrl ? (
-                    <a
-                      href={contactUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
-                    >
-                      Ouvrir la fiche contact dans HubSpot
-                      <ExternalLink className="size-3.5" aria-hidden />
-                    </a>
-                  ) : null}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    {dealUrl ? (
+                      <a
+                        href={dealUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                      >
+                        Ouvrir le deal dans HubSpot
+                        <ExternalLink className="size-3.5" aria-hidden />
+                      </a>
+                    ) : null}
+                    {contactUrl ? (
+                      <a
+                        href={contactUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                      >
+                        Ouvrir la fiche contact dans HubSpot
+                        <ExternalLink className="size-3.5" aria-hidden />
+                      </a>
+                    ) : null}
+                  </div>
                 </div>
               ) : sync?.status === "no_contact" ? (
                 <p className="flex items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 text-sm text-orange-700 dark:text-orange-300">
