@@ -153,7 +153,7 @@ export default async function DashboardPage() {
   return (
     <div className="mx-auto max-w-6xl px-6 py-10 md:px-10">
       <header className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">
           {firstName ? `Bienvenue, ${firstName}` : "Bienvenue"}
         </h1>
       </header>

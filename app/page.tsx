@@ -14,20 +14,23 @@ import { cn } from "@/lib/utils";
 const features = [
   {
     icon: Mic,
+    kicker: "01 — Transcription",
     title: "Transcription instantanée",
     description: "Chaque appel transcrit en français en moins de 60s.",
   },
   {
     icon: Sparkles,
+    kicker: "02 — Analyse",
     title: "Analyse IA Claude",
     description:
       "Score de performance, objections détectées, conseils personnalisés.",
   },
   {
     icon: Plug,
+    kicker: "03 — Intégration",
     title: "Native Ringover/Aircall",
     description:
-      "Branchement en 5 minutes via webhook. Zero setup commercial.",
+      "Branchement en 5 minutes via webhook. Zéro setup commercial.",
   },
 ];
 
@@ -38,7 +41,7 @@ export default function Home() {
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <Link
             href="/"
-            className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-xl font-bold tracking-tight text-transparent"
+            className="font-heading text-xl font-bold tracking-tight text-foreground"
           >
             Aloalo
           </Link>
@@ -53,25 +56,29 @@ export default function Home() {
 
       <main className="flex-1">
         <section className="mx-auto flex max-w-4xl flex-col items-center px-6 pt-24 pb-32 text-center sm:pt-32">
-          <h1 className="text-4xl font-bold tracking-tight text-balance text-zinc-950 sm:text-5xl md:text-6xl">
+          {/* Kicker mono — signature typographique du système. */}
+          <p className="font-mono text-xs tracking-tight text-muted-foreground uppercase">
+            Intelligence commerciale · 100% RGPD
+          </p>
+          {/* Titre display condensé (Barlow), line-height serré, tracking tight. */}
+          <h1 className="mt-5 font-heading text-5xl leading-[0.95] font-bold tracking-[-0.02em] text-balance text-foreground sm:text-6xl md:text-7xl">
             Votre IA écoute tous vos appels.
             <br className="hidden sm:block" />{" "}
-            <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
+            {/* Surlignage menthe — l'unique accent chromatique (façon marqueur). */}
+            <span className="box-decoration-clone bg-mint px-2 text-foreground">
               Vous ne recevez que l&apos;essentiel.
             </span>
           </h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-pretty text-zinc-600">
+          {/* Sous-titre : noir plein (poids éditorial), pas de gris. */}
+          <p className="mt-6 max-w-xl text-lg leading-relaxed text-pretty text-foreground">
             Transcription, analyse et coaching automatique pour vos équipes
-            commerciales. 100% RGPD, hébergé en France.
+            commerciales. Hébergé en France.
           </p>
 
           <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
             <Link
               href="/signup"
-              className={cn(
-                buttonVariants({ size: "lg" }),
-                "h-12 px-6 text-base bg-gradient-to-r from-blue-600 to-violet-600 [a]:hover:from-blue-700 [a]:hover:to-violet-700 [a]:hover:bg-none"
-              )}
+              className={cn(buttonVariants({ size: "lg" }), "h-12 px-6 text-base")}
             >
               Démarrer gratuitement
             </Link>
@@ -79,27 +86,34 @@ export default function Home() {
               href="#demo"
               className={cn(
                 buttonVariants({ variant: "outline", size: "lg" }),
-                "h-12 px-6 text-base"
+                "h-12 px-6 text-base",
               )}
             >
               Voir une démo
             </Link>
           </div>
 
-          <div className="mt-6 text-sm text-zinc-500">
+          <div className="mt-6 font-mono text-xs tracking-tight text-muted-foreground">
             ✓ 14 jours gratuits — Sans CB
           </div>
         </section>
 
         <section className="mx-auto max-w-6xl px-6 pb-32">
+          <p className="mb-8 font-mono text-xs tracking-tight text-muted-foreground uppercase">
+            Ce que fait Aloalo
+          </p>
           <div className="grid gap-6 md:grid-cols-3">
-            {features.map(({ icon: Icon, title, description }) => (
+            {features.map(({ icon: Icon, kicker, title, description }) => (
               <Card key={title} className="p-2">
                 <CardHeader>
-                  <div className="mb-3 inline-flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-50 to-violet-50 ring-1 ring-blue-100">
-                    <Icon className="size-5 text-blue-600" />
+                  {/* Pastille d'icône plate, lavis mist + icône noire (pas de couleur). */}
+                  <div className="mb-3 inline-flex size-10 items-center justify-center rounded-md bg-secondary">
+                    <Icon className="size-5 text-foreground" />
                   </div>
-                  <CardTitle className="text-lg">{title}</CardTitle>
+                  <p className="font-mono text-[11px] tracking-tight text-muted-foreground uppercase">
+                    {kicker}
+                  </p>
+                  <CardTitle className="mt-1 text-lg">{title}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <CardDescription className="text-[15px] leading-relaxed">
@@ -113,16 +127,16 @@ export default function Home() {
       </main>
 
       <footer className="border-t border-border/60">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm text-zinc-500 sm:flex-row">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm text-muted-foreground sm:flex-row">
           <p>© 2026 Aloalo</p>
           <nav className="flex items-center gap-6">
-            <Link href="/privacy" className="hover:text-zinc-900">
+            <Link href="/privacy" className="hover:text-foreground">
               Confidentialité
             </Link>
-            <Link href="/terms" className="hover:text-zinc-900">
+            <Link href="/terms" className="hover:text-foreground">
               CGU
             </Link>
-            <Link href="/legal" className="hover:text-zinc-900">
+            <Link href="/legal" className="hover:text-foreground">
               Mentions légales
             </Link>
           </nav>

@@ -18,7 +18,9 @@ export default function SettingsLayout({
   return (
     <div className="mx-auto max-w-6xl px-6 py-10 md:px-10">
       <header className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Paramètres</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">
+          Paramètres
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Gérez votre compte, votre organisation et vos intégrations.
         </p>

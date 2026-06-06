@@ -177,7 +177,7 @@ export function UserProfile({
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold tracking-tight">
+          <h1 className="truncate font-heading text-2xl font-bold tracking-tight">
             {displayName}
           </h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
