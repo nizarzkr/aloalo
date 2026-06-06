@@ -32,6 +32,31 @@ export type CoachingAdvice = {
   priority: 'high' | 'medium' | 'low'
 }
 
+// --- Scoring factuel par dimensions (J21) ---------------------------------
+// On n'affiche plus un chiffre /100 mais, par dimension, un statut vérifiable
+// + une checklist de critères + une citation qui le prouve.
+
+export type DimensionKey =
+  | 'discovery'
+  | 'qualification'
+  | 'objection_handling'
+  | 'closing'
+  | 'next_step'
+
+export type DimensionStatus = 'validé' | 'partiel' | 'manqué'
+
+export type DimensionCriterion = {
+  label: string   // critère court ("Pain quantifié financièrement")
+  met: boolean    // rempli dans l'appel ou non
+}
+
+export type DimensionEval = {
+  key: DimensionKey
+  status: DimensionStatus
+  criteria: DimensionCriterion[]
+  evidence: string | null   // citation EXACTE qui justifie le statut, ou null
+}
+
 /**
  * Tâche de suivi spécifique à l'appel, proposée par l'IA (et non générique).
  * `due_date` est une date absolue AAAA-MM-JJ calculée par Claude à partir de
@@ -50,12 +75,13 @@ export type SuggestedTask = {
  * (à condition d'ajouter call_id, organization_id, cost_eur, model_used côté serveur).
  */
 export type CallAnalysis = {
-  score_global: number              // 0-100
+  score_global: number              // 0-100 (conservé pour les agrégats manager, plus affiché sur le détail)
   score_discovery: number           // 0-100
   score_qualification: number       // 0-100
   score_objection_handling: number  // 0-100
   score_closing: number             // 0-100
   score_next_step: number           // 0-100
+  dimensions: DimensionEval[]       // scoring factuel affiché sur le détail (J21) — 5 dimensions
   summary: string                   // 2-3 phrases
   strengths: StrengthOrWeakness[]   // max 3
   weaknesses: StrengthOrWeakness[]  // max 3
@@ -132,6 +158,52 @@ const ANALYSIS_TOOL: Anthropic.Tool = {
         minimum: 0,
         maximum: 100,
         description: "Clarté de la prochaine étape : datée, engageante des deux côtés, avec action concrète. 100 = RDV planifié dans le calendrier, 0 = aucune suite.",
+      },
+      dimensions: {
+        type: 'array',
+        description:
+          "Évaluation FACTUELLE des 5 dimensions de l'appel. Tu DOIS renvoyer EXACTEMENT 5 objets, un par `key`, dans cet ordre : discovery, qualification, objection_handling, closing, next_step. Pour chaque dimension : un `status` (validé / partiel / manqué), une `criteria` (checklist de 2-3 critères du cadre avec met=true/false), et une `evidence` (citation EXACTE du transcript qui prouve le statut, ou null si la dimension porte sur une ABSENCE — ex. aucune objection traitée, aucun next step posé). Le statut découle des critères : tous remplis = validé, certains = partiel, aucun = manqué.",
+        items: {
+          type: 'object',
+          properties: {
+            key: {
+              type: 'string',
+              enum: ['discovery', 'qualification', 'objection_handling', 'closing', 'next_step'],
+              description:
+                "Dimension évaluée. discovery = découverte (questions ouvertes, contexte, pain quantifié). qualification = BANT (budget, autorité/décideur, besoin, timeline). objection_handling = accueil + reformulation + réponse argumentée aux objections (si AUCUNE objection n'a été soulevée : status='validé', evidence=null). closing = pousser vers une décision/un engagement concret, sans attentisme. next_step = prochaine étape claire, datée précisément, engageante des deux côtés.",
+            },
+            status: {
+              type: 'string',
+              enum: ['validé', 'partiel', 'manqué'],
+              description: "validé = tous les critères remplis. partiel = certains. manqué = aucun / dimension ratée.",
+            },
+            criteria: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 4,
+              description: "2 à 3 critères factuels et concrets propres à la dimension, chacun avec met=true s'il est rempli dans l'appel, false sinon.",
+              items: {
+                type: 'object',
+                properties: {
+                  label: {
+                    type: 'string',
+                    description: "Critère court et factuel (ex: « Pain quantifié financièrement », « Décideur identifié », « RDV daté jour + heure »).",
+                  },
+                  met: {
+                    type: 'boolean',
+                    description: "true si le critère est rempli dans l'appel, false sinon.",
+                  },
+                },
+                required: ['label', 'met'],
+              },
+            },
+            evidence: {
+              type: 'string',
+              description: "Citation EXACTE du transcript (recopiée mot pour mot) qui justifie le statut. Chaîne VIDE si le statut traduit une ABSENCE (rien à citer).",
+            },
+          },
+          required: ['key', 'status', 'criteria', 'evidence'],
+        },
       },
       summary: {
         type: 'string',
@@ -237,6 +309,7 @@ const ANALYSIS_TOOL: Anthropic.Tool = {
       'score_objection_handling',
       'score_closing',
       'score_next_step',
+      'dimensions',
       'summary',
       'strengths',
       'weaknesses',
@@ -255,12 +328,14 @@ const SYSTEM_PROMPT = `Tu es un expert en analyse d'appels commerciaux B2B franc
 
 Ta mission : analyser le transcript fourni et produire une évaluation structurée, factuelle et actionnable.
 
-Cadre d'analyse :
-- **Discovery** : questions ouvertes, écoute active, compréhension du contexte / organisation / enjeux.
-- **Qualification** : BANT (Budget, Autorité, Besoin, Timeline). Douleurs identifiées.
-- **Objection handling** : reformulation, argumentation, levée du doute. Pas d'évitement.
+Cadre d'analyse (les 5 dimensions, à évaluer aussi factuellement dans \`dimensions\`) :
+- **Discovery** : questions ouvertes, écoute active, compréhension du contexte / organisation / enjeux, pain quantifié (chiffres, temps, argent).
+- **Qualification** : BANT (Budget, Autorité/décideur, Besoin, Timeline). Douleurs identifiées.
+- **Objection handling** : accueil de l'objection sans évitement, reformulation/creusage, réponse argumentée qui lève le doute. Si AUCUNE objection n'a été soulevée, considère la dimension comme validée (evidence=null).
 - **Closing** : pousser vers une décision ou un engagement concret. Pas d'attentisme.
-- **Next step** : prochaine étape claire, datée, engageante des deux côtés.
+- **Next step** : prochaine étape claire, datée précisément (jour + heure), engageante des deux côtés.
+
+Le scoring chiffré (score_*) sert au pilotage interne. Le scoring FACTUEL (\`dimensions\`) est ce que lit le commercial : pour chaque dimension, un statut (validé/partiel/manqué) justifié par une checklist de critères et une citation exacte. La cohérence entre score et statut est attendue (un score bas ⇒ statut partiel/manqué).
 
 En plus de l'évaluation, tu produis deux sorties orientées ACTION, propres à cet appel :
 - **followup_points** : ce que le commercial doit penser à mettre dans son email de suivi (infos demandées/promises non encore fournies, engagements pris par le prospect). Tu décides toi-même de ce qui mérite d'y figurer, en fonction de ce que dit réellement l'appel.
@@ -370,7 +445,9 @@ export async function analyzeCall(
 
   const response = await client.messages.create({
     model: ANALYSIS_MODEL,
-    max_tokens: 3072,
+    // 4096 (vs 3072) pour absorber le scoring factuel par dimensions (J21) en
+    // plus des forces/faiblesses/coaching/suivi déjà produits.
+    max_tokens: 4096,
     temperature: 0,
     system: SYSTEM_PROMPT,
     tools: [ANALYSIS_TOOL],

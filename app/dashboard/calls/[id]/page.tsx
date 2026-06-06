@@ -9,7 +9,6 @@ import {
   ExternalLink,
   FileQuestion,
   ListChecks,
-  Sparkles,
   UserX,
 } from "lucide-react";
 
@@ -22,22 +21,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { UpgradeBanner } from "@/components/dashboard/upgrade-banner";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { HubspotRefreshButton } from "@/components/dashboard/hubspot-refresh-button";
-import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { ConversationDynamics } from "@/components/dashboard/conversation-dynamics";
+import { CallTabs, type CallTab } from "@/components/dashboard/call-tabs";
+import { CallSynthesis } from "@/components/dashboard/call-synthesis";
+import { DimensionsEval } from "@/components/dashboard/dimensions-eval";
 import {
   computeConversationMetrics,
   type ConversationMetrics,
 } from "@/lib/metrics/conversation";
+import type { DimensionEval } from "@/lib/claude";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -239,6 +235,7 @@ export default async function CallDetailPage({
         followup_points,
         suggested_tasks,
         conversation_metrics,
+        dimensions,
         used_ai_profile
       )
     `,
@@ -299,7 +296,6 @@ export default async function CallDetailPage({
   const strengths = asArray<StrengthOrWeakness>(analysis?.strengths);
   const weaknesses = asArray<StrengthOrWeakness>(analysis?.weaknesses);
   const summary = (analysis?.summary ?? "") as string;
-  const scoreGlobal = analysis?.score_global as number | null | undefined;
   // Flag persisté à l'insert dans /api/analyze. true → l'analyse a été
   // contextualisée par le profil IA de l'org au moment où elle a tourné.
   const usedAiProfile = Boolean(analysis?.used_ai_profile);
@@ -361,6 +357,370 @@ export default async function CallDetailPage({
     hubspotPortalId && dealId
       ? `https://app.hubspot.com/contacts/${hubspotPortalId}/record/0-3/${dealId}`
       : null;
+
+  // --- Scoring factuel par dimensions (J21) -------------------------------
+  // [] pour les analyses antérieures au J21 → l'onglet Évaluation retombe sur
+  // l'ancien affichage chiffré (repli legacy ci-dessous).
+  const dimensions = asArray<DimensionEval>(analysis?.dimensions);
+  const hasMissedDimension = dimensions.some((d) => d.status === "manqué");
+
+  // Nombre de signaux conversationnels (J20) à surveiller — alimente la barre
+  // de synthèse et la pastille de l'onglet Dynamique.
+  const signalsCount = conversationMetrics
+    ? Object.values(conversationMetrics.flags).filter(Boolean).length
+    : 0;
+
+  // Prochaine action mise en avant dans la synthèse : la 1re tâche suggérée.
+  const nextAction = suggestedTasks[0]?.title ?? null;
+
+  // --- Contenus des onglets (rendus côté serveur, passés à CallTabs) ------
+
+  // Évaluation : dimensions factuelles, ou repli chiffré pour les vieux appels.
+  const evaluationContent =
+    dimensions.length > 0 ? (
+      <DimensionsEval dimensions={dimensions} />
+    ) : (
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {AXES.map(({ key, label }) => {
+          const score = analysis?.[key] as number | null | undefined;
+          const value = typeof score === "number" ? score : 0;
+          return (
+            <Card key={key} size="sm">
+              <CardContent className="space-y-2">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-medium">{label}</span>
+                  <span className="text-sm font-semibold tabular-nums">
+                    {typeof score === "number" ? `${score}/100` : "–"}
+                  </span>
+                </div>
+                <Progress value={value} indicatorClassName={progressColor(value)} />
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    );
+
+  // Coaching : points forts, axes d'amélioration, conseils (le résumé est
+  // désormais dans la barre de synthèse, plus ici).
+  const coachingContent = (
+    <div className="grid gap-4">
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Points forts</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {strengths.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Aucun point fort identifié.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {strengths.map((s, i) => (
+                  <li key={i} className="flex gap-2 text-sm">
+                    <span
+                      aria-hidden
+                      className="mt-1.5 size-1.5 shrink-0 rounded-full bg-green-500"
+                    />
+                    <div>
+                      <p className="font-medium text-foreground">{s.point}</p>
+                      {s.citation ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground italic">
+                          « {s.citation} »
+                        </p>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Axes d&apos;amélioration</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {weaknesses.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Aucun axe d&apos;amélioration identifié.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {weaknesses.map((w, i) => (
+                  <li key={i} className="flex gap-2 text-sm">
+                    <span
+                      aria-hidden
+                      className="mt-1.5 size-1.5 shrink-0 rounded-full bg-orange-500"
+                    />
+                    <div>
+                      <p className="font-medium text-foreground">{w.point}</p>
+                      {w.citation ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground italic">
+                          « {w.citation} »
+                        </p>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {coaching.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Conseils de coaching</CardTitle>
+            <CardDescription>
+              Triés par priorité — à appliquer sur les prochains appels.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-3">
+              {coaching.map((c, i) => (
+                <li key={i} className="flex items-start gap-3">
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "mt-1.5 size-1.5 shrink-0 rounded-full",
+                      PRIORITY_DOT[c.priority],
+                    )}
+                  />
+                  <p className="flex-1 text-sm leading-relaxed text-foreground">
+                    {c.advice}
+                  </p>
+                  <Badge variant={PRIORITY_VARIANT[c.priority]} className="shrink-0">
+                    {PRIORITY_LABEL[c.priority]}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
+    </div>
+  );
+
+  // Suivi : synchro HubSpot + points email + tâches (ex-« Prochaines étapes »).
+  const suiviContent = (
+    <Card>
+      <CardContent className="space-y-5">
+        <div className="flex justify-end">
+          <HubspotRefreshButton callId={call.id as string} />
+        </div>
+
+        {sync?.status === "synced" ? (
+          <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+            <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+              <CheckCircle2 className="size-4" aria-hidden />
+              Synchronisé avec HubSpot
+            </p>
+            <ul className="space-y-1 text-sm text-muted-foreground">
+              <li>{sync.note_id ? "✓" : "—"} Note de synthèse</li>
+              <li>
+                {sync.tasks?.filter((t) => t.pushed).length ?? 0} tâche(s) de
+                suivi créée(s)
+              </li>
+              {sync.target ? (
+                <li>
+                  Rattaché au{" "}
+                  {sync.target === "deal"
+                    ? `deal${dealName ? ` « ${dealName} »` : ""}`
+                    : "contact"}
+                </li>
+              ) : null}
+            </ul>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {dealUrl ? (
+                <a
+                  href={dealUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                >
+                  Ouvrir le deal dans HubSpot
+                  <ExternalLink className="size-3.5" aria-hidden />
+                </a>
+              ) : null}
+              {contactUrl ? (
+                <a
+                  href={contactUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                >
+                  Ouvrir la fiche contact dans HubSpot
+                  <ExternalLink className="size-3.5" aria-hidden />
+                </a>
+              ) : null}
+            </div>
+          </div>
+        ) : sync?.status === "no_contact" ? (
+          <p className="flex items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 text-sm text-orange-700 dark:text-orange-300">
+            <UserX className="size-4 shrink-0" aria-hidden />
+            Aucun contact HubSpot trouvé pour ce numéro — les points et tâches
+            ci-dessous restent disponibles ici.
+          </p>
+        ) : sync?.status === "skipped" ? (
+          <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+            HubSpot n&apos;est pas connecté.{" "}
+            <Link
+              href="/dashboard/settings/integrations"
+              className="font-medium text-foreground underline-offset-4 hover:underline"
+            >
+              Connecter HubSpot
+            </Link>{" "}
+            pour pousser automatiquement note de synthèse et tâches de suivi.
+          </p>
+        ) : null}
+
+        {followupPoints.length > 0 ? (
+          <div className="space-y-3 rounded-lg border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-sm font-medium">
+                <ListChecks className="size-4 text-muted-foreground" aria-hidden />
+                À intégrer dans votre email de suivi
+              </p>
+              <CopyButton
+                value={followupPoints.map((p) => `• ${p}`).join("\n")}
+                label="Copier"
+              />
+            </div>
+            <ul className="space-y-1.5 text-sm text-foreground">
+              {followupPoints.map((point, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="select-none text-muted-foreground">•</span>
+                  <span className="leading-relaxed">{point}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {tasksToShow.length > 0 ? (
+          <div className="space-y-3 rounded-lg border p-4">
+            <p className="flex items-center gap-2 text-sm font-medium">
+              <CalendarClock className="size-4 text-muted-foreground" aria-hidden />
+              Tâches de suivi proposées
+            </p>
+            <ul className="space-y-3">
+              {tasksToShow.map((task, i) => (
+                <li key={i} className="space-y-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-medium leading-snug text-foreground">
+                      {task.title}
+                    </p>
+                    <Badge variant="outline" className="shrink-0 gap-1">
+                      <CalendarClock className="size-3" aria-hidden />
+                      {formatDueDate(task.due_date)}
+                    </Badge>
+                  </div>
+                  {task.reason ? (
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      {task.reason}
+                    </p>
+                  ) : null}
+                  {task.pushed === false ? (
+                    <p className="text-xs text-orange-600 dark:text-orange-400">
+                      Non créée dans HubSpot (réessayez plus tard).
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+
+  // Transcription : toujours disponible (preuve brute).
+  const transcriptionContent = (
+    <Card>
+      <CardContent>
+        {segments.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Transcription en cours…
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {segments.map((seg, i) => {
+              const isCommercial = seg.speaker === "A";
+              return (
+                <li
+                  key={i}
+                  className={cn(
+                    "flex flex-col gap-1",
+                    isCommercial ? "items-start" : "items-end",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex items-baseline gap-2 text-xs",
+                      isCommercial ? "" : "flex-row-reverse",
+                    )}
+                  >
+                    <span className="font-medium text-foreground">
+                      {isCommercial ? "Commercial" : "Prospect"}
+                    </span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {formatTimestamp(seg.start)}
+                    </span>
+                  </div>
+                  <p
+                    className={cn(
+                      "max-w-[90%] rounded-2xl px-3 py-2 text-sm md:max-w-[80%]",
+                      isCommercial
+                        ? "bg-mint text-foreground"
+                        : "bg-muted text-foreground",
+                    )}
+                  >
+                    {seg.text}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  // Assemblage des onglets selon ce qui est disponible. Ordre = pyramide
+  // inversée : évaluation → dynamique → coaching → suivi → transcription.
+  const isAnalyzed = status === "analyzed" && Boolean(analysis);
+  const tabs: CallTab[] = [];
+  if (isAnalyzed) {
+    tabs.push({
+      id: "evaluation",
+      label: "Évaluation",
+      alert: hasMissedDimension,
+      content: evaluationContent,
+    });
+  }
+  if (conversationMetrics && conversationMetrics.total_talk_ms > 0) {
+    tabs.push({
+      id: "dynamique",
+      label: "Dynamique",
+      alert: signalsCount > 0,
+      content: <ConversationDynamics metrics={conversationMetrics} />,
+    });
+  }
+  if (isAnalyzed) {
+    tabs.push({ id: "coaching", label: "Coaching", content: coachingContent });
+  }
+  if (isAnalyzed && hasFollowupSection) {
+    tabs.push({ id: "suivi", label: "Suivi", content: suiviContent });
+  }
+  tabs.push({
+    id: "transcription",
+    label: "Transcription",
+    content: transcriptionContent,
+  });
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10 md:px-10">
@@ -435,417 +795,19 @@ export default async function CallDetailPage({
         </section>
       ) : null}
 
-      {/* ====================== Scoring ====================== */}
-      {status === "analyzed" && analysis ? (
-        <CollapsibleSection
-          icon="gauge"
-          title="Scoring"
-          description="Score global et performance par étape de l'appel."
-        >
-          <div className="grid gap-6">
-            {/* Score global */}
-          <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-              <div className="space-y-1.5">
-                <CardDescription>Score global</CardDescription>
-                <CardTitle className="text-4xl font-bold tabular-nums tracking-tight md:text-5xl">
-                  {scoreGlobal ?? "–"}
-                  <span className="ml-1 text-xl font-medium text-muted-foreground md:text-2xl">
-                    /100
-                  </span>
-                </CardTitle>
-              </div>
-              {/* Badge "Analyse personnalisée" — visible uniquement si le
-                  profil IA de l'org a été injecté dans le prompt Claude
-                  (flag persisté en DB au moment de l'analyse). Cliquable :
-                  ramène vers les réglages du Profil IA via l'ancre. */}
-              {usedAiProfile ? (
-                <TooltipProvider delay={150}>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Link
-                          href="/dashboard/settings/ai-profile"
-                          aria-label="Voir le Profil IA dans les réglages"
-                        />
-                      }
-                    >
-                      <Badge
-                        variant="outline"
-                        className="cursor-pointer gap-1 border-foreground/10 bg-mint text-foreground transition-colors hover:bg-mint/80"
-                      >
-                        <Sparkles className="size-3" aria-hidden />
-                        Analyse personnalisée ✓
-                      </Badge>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Cette analyse a utilisé le Profil IA de votre organisation
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : null}
-            </CardHeader>
-          </Card>
-
-          {/* Sous-scores par axe */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {AXES.map(({ key, label }) => {
-              const score = analysis?.[key] as number | null | undefined;
-              const value = typeof score === "number" ? score : 0;
-              return (
-                <Card key={key} size="sm">
-                  <CardContent className="space-y-2">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-sm font-medium">{label}</span>
-                      <span className="text-sm font-semibold tabular-nums">
-                        {typeof score === "number" ? `${score}/100` : "–"}
-                      </span>
-                    </div>
-                    <Progress
-                      value={value}
-                      indicatorClassName={progressColor(value)}
-                    />
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-          </div>
-        </CollapsibleSection>
+      {/* Synthèse (toujours visible) — uniquement si l'appel est analysé. */}
+      {isAnalyzed ? (
+        <CallSynthesis
+          summary={summary}
+          dimensions={dimensions}
+          signalsCount={signalsCount}
+          usedAiProfile={usedAiProfile}
+          nextAction={nextAction}
+        />
       ) : null}
 
-      {/* ================== Dynamique de l'appel ================== */}
-      {/* Métriques déterministes (J20) — calculées sans IA depuis la
-          diarisation. Affichées dès qu'on a de la parole exploitable, même
-          sans analyse IA (appel seulement transcrit). */}
-      {conversationMetrics && conversationMetrics.total_talk_ms > 0 ? (
-        <CollapsibleSection
-          icon="activity"
-          title="Dynamique de l'appel"
-          description="Temps de parole, rythme des échanges et signaux faibles — mesurés sur la conversation, sans IA."
-        >
-          <ConversationDynamics metrics={conversationMetrics} />
-        </CollapsibleSection>
-      ) : null}
-
-      {/* ====================== Analyse ====================== */}
-      {status === "analyzed" && analysis ? (
-        <CollapsibleSection
-          icon="lightbulb"
-          title="Analyse"
-          description="Résumé de l'appel, points forts, axes d'amélioration et coaching."
-        >
-          {/* Résumé de l'appel (vue d'ensemble en premier) */}
-          {summary ? (
-            <Card className="mb-4">
-              <CardHeader>
-                <CardTitle className="text-base">Résumé de l&apos;appel</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm leading-relaxed text-foreground">
-                  {summary}
-                </p>
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {/* Points forts + Axes d'amélioration */}
-          <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Points forts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {strengths.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucun point fort identifié.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {strengths.map((s, i) => (
-                    <li key={i} className="flex gap-2 text-sm">
-                      <span
-                        aria-hidden
-                        className="mt-1.5 size-1.5 shrink-0 rounded-full bg-green-500"
-                      />
-                      <div>
-                        <p className="font-medium text-foreground">{s.point}</p>
-                        {s.citation ? (
-                          <p className="mt-0.5 text-xs text-muted-foreground italic">
-                            « {s.citation} »
-                          </p>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Axes d&apos;amélioration</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {weaknesses.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucun axe d&apos;amélioration identifié.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {weaknesses.map((w, i) => (
-                    <li key={i} className="flex gap-2 text-sm">
-                      <span
-                        aria-hidden
-                        className="mt-1.5 size-1.5 shrink-0 rounded-full bg-orange-500"
-                      />
-                      <div>
-                        <p className="font-medium text-foreground">{w.point}</p>
-                        {w.citation ? (
-                          <p className="mt-0.5 text-xs text-muted-foreground italic">
-                            « {w.citation} »
-                          </p>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-          </div>
-
-          {/* Conseils de coaching */}
-          {coaching.length > 0 ? (
-            <Card className="mt-4">
-            <CardHeader>
-              <CardTitle className="text-base">Conseils de coaching</CardTitle>
-              <CardDescription>
-                Triés par priorité — à appliquer sur les prochains appels.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-3">
-                {coaching.map((c, i) => (
-                  <li key={i} className="flex items-start gap-3">
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "mt-1.5 size-1.5 shrink-0 rounded-full",
-                        PRIORITY_DOT[c.priority],
-                      )}
-                    />
-                    <p className="flex-1 text-sm leading-relaxed text-foreground">
-                      {c.advice}
-                    </p>
-                    <Badge
-                      variant={PRIORITY_VARIANT[c.priority]}
-                      className="shrink-0"
-                    >
-                      {PRIORITY_LABEL[c.priority]}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-            </Card>
-          ) : null}
-        </CollapsibleSection>
-      ) : null}
-
-      {/* ================= Prochaines étapes ================= */}
-      {status === "analyzed" && hasFollowupSection ? (
-        <CollapsibleSection
-          icon="list-todo"
-          title="Prochaines étapes"
-          description="Points à intégrer à votre email de suivi et tâches de relance déduites de cet appel."
-          action={<HubspotRefreshButton callId={call.id as string} />}
-        >
-          <Card>
-            <CardContent className="space-y-5">
-              {/* Statut de la synchro HubSpot */}
-              {sync?.status === "synced" ? (
-                <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
-                  <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                    <CheckCircle2 className="size-4" aria-hidden />
-                    Synchronisé avec HubSpot
-                  </p>
-                  <ul className="space-y-1 text-sm text-muted-foreground">
-                    <li>{sync.note_id ? "✓" : "—"} Note de synthèse</li>
-                    <li>
-                      {(sync.tasks?.filter((t) => t.pushed).length ?? 0)} tâche(s)
-                      de suivi créée(s)
-                    </li>
-                    {/* Où la synchro a été posée : deal (affaire) ou contact. */}
-                    {sync.target ? (
-                      <li>
-                        Rattaché au{" "}
-                        {sync.target === "deal"
-                          ? `deal${dealName ? ` « ${dealName} »` : ""}`
-                          : "contact"}
-                      </li>
-                    ) : null}
-                  </ul>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                    {dealUrl ? (
-                      <a
-                        href={dealUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
-                      >
-                        Ouvrir le deal dans HubSpot
-                        <ExternalLink className="size-3.5" aria-hidden />
-                      </a>
-                    ) : null}
-                    {contactUrl ? (
-                      <a
-                        href={contactUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-sm font-medium text-foreground underline-offset-4 hover:underline"
-                      >
-                        Ouvrir la fiche contact dans HubSpot
-                        <ExternalLink className="size-3.5" aria-hidden />
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
-              ) : sync?.status === "no_contact" ? (
-                <p className="flex items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 text-sm text-orange-700 dark:text-orange-300">
-                  <UserX className="size-4 shrink-0" aria-hidden />
-                  Aucun contact HubSpot trouvé pour ce numéro — les points et
-                  tâches ci-dessous restent disponibles ici.
-                </p>
-              ) : sync?.status === "skipped" ? (
-                <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-                  HubSpot n&apos;est pas connecté.{" "}
-                  <Link
-                    href="/dashboard/settings/integrations"
-                    className="font-medium text-foreground underline-offset-4 hover:underline"
-                  >
-                    Connecter HubSpot
-                  </Link>{" "}
-                  pour pousser automatiquement note de synthèse et tâches de suivi.
-                </p>
-              ) : null}
-
-              {/* Points à intégrer dans l'email de suivi (depuis l'analyse IA). */}
-              {followupPoints.length > 0 ? (
-                <div className="space-y-3 rounded-lg border p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="flex items-center gap-2 text-sm font-medium">
-                      <ListChecks className="size-4 text-muted-foreground" aria-hidden />
-                      À intégrer dans votre email de suivi
-                    </p>
-                    <CopyButton
-                      value={followupPoints.map((p) => `• ${p}`).join("\n")}
-                      label="Copier"
-                    />
-                  </div>
-                  <ul className="space-y-1.5 text-sm text-foreground">
-                    {followupPoints.map((point, i) => (
-                      <li key={i} className="flex gap-2">
-                        <span className="select-none text-muted-foreground">•</span>
-                        <span className="leading-relaxed">{point}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              {/* Tâches de suivi proposées par l'IA, datées selon l'appel. */}
-              {tasksToShow.length > 0 ? (
-                <div className="space-y-3 rounded-lg border p-4">
-                  <p className="flex items-center gap-2 text-sm font-medium">
-                    <CalendarClock className="size-4 text-muted-foreground" aria-hidden />
-                    Tâches de suivi proposées
-                  </p>
-                  <ul className="space-y-3">
-                    {tasksToShow.map((task, i) => (
-                      <li key={i} className="space-y-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="text-sm font-medium leading-snug text-foreground">
-                            {task.title}
-                          </p>
-                          <Badge variant="outline" className="shrink-0 gap-1">
-                            <CalendarClock className="size-3" aria-hidden />
-                            {formatDueDate(task.due_date)}
-                          </Badge>
-                        </div>
-                        {task.reason ? (
-                          <p className="text-xs leading-relaxed text-muted-foreground">
-                            {task.reason}
-                          </p>
-                        ) : null}
-                        {task.pushed === false ? (
-                          <p className="text-xs text-orange-600 dark:text-orange-400">
-                            Non créée dans HubSpot (réessayez plus tard).
-                          </p>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-        </CollapsibleSection>
-      ) : null}
-
-      {/* ==================== Transcription ==================== */}
-      <CollapsibleSection
-        icon="messages-square"
-        title="Transcription"
-        description="Conversation diarisée par AssemblyAI."
-        defaultOpen={false}
-      >
-        <Card>
-          <CardContent>
-            {segments.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Transcription en cours…
-              </p>
-            ) : (
-              <ul className="space-y-3">
-                {segments.map((seg, i) => {
-                  const isCommercial = seg.speaker === "A";
-                  return (
-                    <li
-                      key={i}
-                      className={cn(
-                        "flex flex-col gap-1",
-                        isCommercial ? "items-start" : "items-end",
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "flex items-baseline gap-2 text-xs",
-                          isCommercial ? "" : "flex-row-reverse",
-                        )}
-                      >
-                        <span className="font-medium text-foreground">
-                          {isCommercial ? "Commercial" : "Prospect"}
-                        </span>
-                        <span className="text-muted-foreground tabular-nums">
-                          {formatTimestamp(seg.start)}
-                        </span>
-                      </div>
-                      <p
-                        className={cn(
-                          "max-w-[90%] rounded-2xl px-3 py-2 text-sm md:max-w-[80%]",
-                          isCommercial
-                            ? "bg-mint text-foreground"
-                            : "bg-muted text-foreground",
-                        )}
-                      >
-                        {seg.text}
-                      </p>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </CollapsibleSection>
+      {/* Détail en onglets — pyramide inversée (évaluation → … → transcription). */}
+      <CallTabs tabs={tabs} />
     </div>
   );
 }
