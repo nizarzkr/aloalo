@@ -235,6 +235,139 @@ const FLOWLY_SCENARIO_C: MockTranscript = buildScenario({
   ],
 })
 
+// ---------------------------------------------------------------------------
+// Lot de 5 contacts à intégrer dans HubSpot (matching par callee_number).
+// Une PAIRE partage le même deal (Brio Studio) : Hugo (champion) puis Élise
+// (DAF/budget) — utile pour tester le multi-contact sur une même affaire.
+// Les 3 autres sont des deals distincts. Vendeur = Léa de Flowly (speaker A).
+// ---------------------------------------------------------------------------
+
+// 1/5 — Brio Studio · Hugo Marchand (Directeur des opérations, champion).
+//        Deal « Brio Studio — refonte stack outils » (1er contact).
+const BRIO_HUGO: MockTranscript = buildScenario({
+  id: 'mock-7',
+  title: 'Flowly · Brio Studio · Hugo (découverte, doit valider avec la DAF)',
+  description:
+    'Brio Studio (agence, 18 pers.) · fuite facturation ~30k€/an · forte découverte · doit boucler la DAF Élise · démo à 3 jeudi 11h. Même deal qu\'Élise.',
+  caller_number: '+33600112233',
+  callee_number: '+33611223344',
+  turns: [
+    { speaker: 'A', text: "Bonjour Hugo, Léa de Flowly. On avait calé 20 minutes aujourd'hui pour parler de votre organisation chez Brio Studio, c'est toujours bon pour vous ?" },
+    { speaker: 'B', text: "Oui bonjour Léa, parfait, j'ai le créneau, allez-y." },
+    { speaker: 'A', text: "Super. Avant de vous montrer quoi que ce soit, j'aimerais comprendre comment vous fonctionnez. Vous êtes combien dans l'équipe, et comment vous suivez les projets clients aujourd'hui ?" },
+    { speaker: 'B', text: "On est 18 chez Brio Studio, une agence créative. Aujourd'hui on jongle entre Monday pour les tâches et un tableur Excel pour la facturation. C'est l'Excel qui nous pose problème, on perd un temps fou et surtout on oublie de facturer des prestations." },
+    { speaker: 'A', text: "D'accord. Et ces oublis de facturation, si vous deviez les chiffrer, ça représente combien sur une année ?" },
+    { speaker: 'B', text: "Franchement ? On a fait le calcul l'an dernier, on estime avoir oublié de facturer environ 30 000 euros sur l'année. Pour une boîte de notre taille c'est énorme." },
+    { speaker: 'A', text: "C'est précisément le genre de fuite que Flowly stoppe : la facturation est native, rattachée à chaque tâche, donc rien ne passe à la trappe. Aujourd'hui, comment se fait le passage d'une tâche terminée à la facture ?" },
+    { speaker: 'B', text: "C'est manuel. Un chef de projet doit penser à reporter dans l'Excel, et souvent il oublie ou il le fait trop tard." },
+    { speaker: 'B', text: "Du coup une question concrète : combien de temps ça prend de migrer depuis Monday ? On a deux ans d'historique, je ne veux rien perdre." },
+    { speaker: 'A', text: "Très bonne question. La reprise depuis Monday est automatique via leur API : tableaux, tâches, commentaires, historique des dates. On fait ça en général en deux jours, sans perte de données." },
+    { speaker: 'B', text: "Ok, ça me rassure. Par contre je ne décide pas seul sur ce type d'outil : il faut que j'en parle à Élise, notre DAF, parce que c'est elle qui valide le budget." },
+    { speaker: 'A', text: "Tout à fait, c'est important qu'elle soit dans la boucle dès maintenant. On cale une démo à trois la semaine prochaine, avec Élise ? Je préparerais un cas chiffré sur votre fuite de facturation." },
+    { speaker: 'B', text: "Oui, très bien. Disons jeudi prochain à 11h, je l'invite de mon côté." },
+    { speaker: 'A', text: "Parfait, jeudi 11h, je vous envoie l'invitation avec un ordre du jour clair. Merci Hugo, à jeudi." },
+  ],
+})
+
+// 2/5 — Brio Studio · Élise Fontaine (DAF, décideuse budget).
+//        MÊME deal que Hugo « Brio Studio — refonte stack outils ».
+const BRIO_ELISE: MockTranscript = buildScenario({
+  id: 'mock-8',
+  title: 'Flowly · Brio Studio · Élise (DAF, budget & ROI)',
+  description:
+    'Brio Studio · DAF · focalisée chiffres · vraie objection (Monday+Zapier moins cher) traitée par fiabilité · pilote mesurable au 1er. MÊME deal qu\'Hugo.',
+  caller_number: '+33600112233',
+  callee_number: '+33611223355',
+  turns: [
+    { speaker: 'A', text: "Bonjour Élise, Léa de Flowly. Hugo m'a dit que c'est vous qui pilotez le budget outils chez Brio Studio. Merci de prendre le temps." },
+    { speaker: 'B', text: "Bonjour Léa. Oui, Hugo m'a parlé de Flowly, il est plutôt emballé. Mais moi je regarde surtout les chiffres, donc soyons concrets." },
+    { speaker: 'A', text: "Avec plaisir. Hugo m'a indiqué environ 30 000 euros de prestations oubliées à la facturation l'an dernier. Vous confirmez cet ordre de grandeur ?" },
+    { speaker: 'B', text: "Oui, c'est même peut-être un peu sous-estimé. C'est ça qui m'intéresse, pas la liste des fonctionnalités." },
+    { speaker: 'A', text: "Alors parlons-en. Flowly rattache la facturation à chaque tâche : dès qu'une prestation est livrée, elle est prête à être facturée. Sur 30 000 euros de fuite, même en n'en récupérant que la moitié, l'outil est rentabilisé plusieurs fois sur l'année." },
+    { speaker: 'B', text: "Le calcul se tient. Mais soyons clairs : Monday avec un connecteur Zapier fait à peu près la même chose pour moins cher. Pourquoi je paierais plus chez vous ?" },
+    { speaker: 'A', text: "Question légitime. La différence c'est que Zapier n'est pas temps réel et casse régulièrement : vous découvrez le bug le jour où vous facturez. Avec Flowly c'est natif, donc fiable à 100%. Sur de la facturation, la fiabilité n'est pas une option. Quel budget mensuel aviez-vous en tête ?" },
+    { speaker: 'B', text: "On est prêts à mettre autour de 250 euros par mois si la valeur est vraiment au rendez-vous." },
+    { speaker: 'A', text: "On est exactement dans cette fourchette pour 18 personnes. Je vous propose de démarrer par un mois pilote facturé, pour que vous mesuriez la récupération réelle sur vos prochaines factures. Si les chiffres sont là, on continue." },
+    { speaker: 'B', text: "Ça me va, un pilote mesurable c'est exactement ce qu'il me faut. On peut démarrer début de mois prochain ?" },
+    { speaker: 'A', text: "Parfait. Je cale le lancement au 1er, et je vous envoie le récap avec les indicateurs qu'on suivra ensemble. Je mets Hugo en copie." },
+    { speaker: 'B', text: "Très bien, merci Léa, j'attends votre mail." },
+  ],
+})
+
+// 3/5 — Vinea Distribution · Nadia Cherif (Directrice commerciale).
+//        Deal « Vinea Distribution — outillage équipe » (price-sensitive).
+const VINEA_NADIA: MockTranscript = buildScenario({
+  id: 'mock-9',
+  title: 'Flowly · Vinea Distribution · Nadia (price-sensitive)',
+  description:
+    'Vinea Distribution · prospect focalisée prix · objection « Trello est gratuit » · découverte écourtée · next step mou (plaquette, rappel dans 2 semaines).',
+  caller_number: '+33600112233',
+  callee_number: '+33622334455',
+  turns: [
+    { speaker: 'A', text: "Bonjour Nadia, Léa de Flowly. Vous aviez demandé des informations sur notre outil pour votre équipe commerciale chez Vinea, c'est bien ça ?" },
+    { speaker: 'B', text: "Oui bonjour. Alors écoutez, surtout je voudrais savoir combien ça coûte, parce que je n'ai pas beaucoup de temps." },
+    { speaker: 'A', text: "Bien sûr, j'y viens. Juste pour vous donner le bon tarif : vous seriez combien à l'utiliser ?" },
+    { speaker: 'B', text: "On serait 10. Mais vraiment, le prix d'abord." },
+    { speaker: 'A', text: "Pour 10 personnes on est à 150 euros par mois, tout compris." },
+    { speaker: 'B', text: "Ah. C'est cher quand même. On a déjà Trello et c'est gratuit." },
+    { speaker: 'A', text: "Je comprends. Trello est très bien pour des tâches simples, mais dès qu'on parle de facturation ou de suivi de rentabilité par client, il montre vite ses limites. La rentabilité par client, c'est un sujet pour vous ?" },
+    { speaker: 'B', text: "Mouais, un peu, mais bon. Honnêtement à ce prix-là je ne sais pas. Envoyez-moi une plaquette, je regarderai avec mon associé et je reviens vers vous." },
+    { speaker: 'A', text: "D'accord, je vous envoie une présentation. Je peux vous rappeler vendredi pour en discuter de vive voix ?" },
+    { speaker: 'B', text: "On verra, rappelez plutôt dans deux semaines, là c'est très chargé." },
+    { speaker: 'A', text: "Très bien, je note et je reviens vers vous dans deux semaines. Bonne journée Nadia." },
+  ],
+})
+
+// 4/5 — Atelier Nord · Marc Dubreuil (Fondateur).
+//        Deal « Atelier Nord — abonnement » (fin d'essai, closing).
+const ATELIER_MARC: MockTranscript = buildScenario({
+  id: 'mock-10',
+  title: 'Flowly · Atelier Nord · Marc (fin d\'essai, closing signé)',
+  description:
+    'Atelier Nord · fin d\'essai très positive · buying signals forts (sièges au prorata, export des données) · interruption constructive · signature, démarrage lundi.',
+  caller_number: '+33600112233',
+  callee_number: '+33633445566',
+  turns: [
+    { speaker: 'A', text: "Bonjour Marc, Léa de Flowly. On se retrouve comme convenu après vos deux semaines d'essai. Alors, ce test ?" },
+    { speaker: 'B', text: "Franchement Léa, très convaincu. L'équipe a adopté l'outil tout de suite, et la facturation native nous a déjà fait gagner un temps fou." },
+    { speaker: 'A', text: "Ravie de l'entendre. Vous voyez des points bloquants avant qu'on aille plus loin ?" },
+    { speaker: 'B', text: "Attendez, juste avant — comment ça se passe pour ajouter des utilisateurs en cours de mois ? On va recruter deux personnes en septembre." },
+    { speaker: 'A', text: "Très simple : vous ajoutez un siège quand vous voulez, c'est facturé au prorata, sans engagement à l'année sur le nombre de sièges." },
+    { speaker: 'B', text: "Parfait. Et au niveau des données, si un jour on veut partir, on récupère tout ?" },
+    { speaker: 'A', text: "Oui, export complet à tout moment, vos données vous appartiennent, aucune rétention de notre côté." },
+    { speaker: 'B', text: "Nickel. Bon, pour moi c'est oui. Comment on signe ?" },
+    { speaker: 'A', text: "Excellent. Je vous envoie le bon de commande aujourd'hui pour 12 sièges. Vous le signez en ligne et je bascule votre compte d'essai en compte payant sans interruption." },
+    { speaker: 'B', text: "Top. Je signe dès que je l'ai. On peut démarrer officiellement lundi ?" },
+    { speaker: 'A', text: "Lundi c'est parfait. Je vous envoie tout ça d'ici une heure. Bienvenue chez Flowly, Marc." },
+    { speaker: 'B', text: "Merci à vous, à lundi." },
+  ],
+})
+
+// 5/5 — Helia Santé · Sophie Vasseur (Responsable des opérations).
+//        Deal « Helia Santé — pilote » (prospect désengagé, fausse objection).
+const HELIA_SOPHIE: MockTranscript = buildScenario({
+  id: 'mock-11',
+  title: 'Flowly · Helia Santé · Sophie (désengagée, fausse objection)',
+  description:
+    'Helia Santé · prospect peu engagée (réponses courtes) · fausse objection « pas le temps, on est en réorg » · aucun buying signal · next step flou « à la rentrée ».',
+  caller_number: '+33600112233',
+  callee_number: '+33644556677',
+  turns: [
+    { speaker: 'A', text: "Bonjour Sophie, Léa de Flowly. Je vous appelle suite à votre inscription à notre webinaire de la semaine dernière. Vous avez deux minutes ?" },
+    { speaker: 'B', text: "Oui, deux minutes." },
+    { speaker: 'A', text: "Super. Je voulais comprendre ce qui vous avait intéressée dans le webinaire — vous cherchez à mieux organiser vos projets chez Helia ?" },
+    { speaker: 'B', text: "Oui, enfin, c'était surtout par curiosité." },
+    { speaker: 'A', text: "D'accord. Aujourd'hui vous utilisez quoi pour suivre vos projets et les plannings d'équipe ?" },
+    { speaker: 'B', text: "On a un peu de tout, des fichiers partagés surtout. Ça va à peu près." },
+    { speaker: 'A', text: "Beaucoup d'équipes nous disent ça, puis se rendent compte qu'elles perdent des heures chaque semaine en recopie et en allers-retours. Est-ce que ça vous parle ?" },
+    { speaker: 'B', text: "Peut-être, mais honnêtement on n'a pas le temps de changer d'outil en ce moment. On est en pleine réorganisation." },
+    { speaker: 'A', text: "Je comprends. Justement, un outil comme le nôtre peut aider à clarifier les choses pendant une réorganisation. On prévoit un point quand ce sera plus calme ?" },
+    { speaker: 'B', text: "Oui, peut-être à la rentrée. Envoyez-moi un mail, on verra à ce moment-là." },
+    { speaker: 'A', text: "Très bien, je vous recontacte à la rentrée. Merci Sophie, bonne journée." },
+    { speaker: 'B', text: "Merci, au revoir." },
+  ],
+})
+
 export const MOCK_TRANSCRIPTS: MockTranscript[] = [
   {
     id: 'mock-1',
@@ -363,4 +496,9 @@ Parfait, j'attends votre mail.`,
   FLOWLY_SCENARIO_A,
   FLOWLY_SCENARIO_B,
   FLOWLY_SCENARIO_C,
+  BRIO_HUGO,
+  BRIO_ELISE,
+  VINEA_NADIA,
+  ATELIER_MARC,
+  HELIA_SOPHIE,
 ]
