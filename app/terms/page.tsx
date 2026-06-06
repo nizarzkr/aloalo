@@ -196,7 +196,7 @@ export default function TermsPage() {
           <p>
             Le client peut résilier son abonnement à tout moment depuis son
             espace
-            <Link href="/dashboard/billing" className="ml-1 underline">
+            <Link href="/dashboard/settings/billing" className="ml-1 underline">
               Facturation
             </Link>
             . La résiliation prend effet à la fin de la période en cours et

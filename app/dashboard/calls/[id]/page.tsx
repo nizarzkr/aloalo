@@ -444,7 +444,7 @@ export default async function CallDetailPage({
                     <TooltipTrigger
                       render={
                         <Link
-                          href="/dashboard/settings#profil-ia"
+                          href="/dashboard/settings/ai-profile"
                           aria-label="Voir le Profil IA dans les réglages"
                         />
                       }
@@ -686,7 +686,7 @@ export default async function CallDetailPage({
                 <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
                   HubSpot n&apos;est pas connecté.{" "}
                   <Link
-                    href="/dashboard/settings#hubspot"
+                    href="/dashboard/settings/integrations"
                     className="font-medium text-foreground underline-offset-4 hover:underline"
                   >
                     Connecter HubSpot

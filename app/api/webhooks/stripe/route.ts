@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
 
   // Invalide le cache de la page billing pour que la prochaine visite voie
   // l'état frais (utile après annulation / changement de plan / paiement).
-  revalidatePath('/dashboard/billing')
+  revalidatePath('/dashboard/settings/billing')
 
   return NextResponse.json({ received: true })
 }

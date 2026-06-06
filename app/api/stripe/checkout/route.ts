@@ -96,8 +96,8 @@ export async function POST(req: NextRequest) {
     mode: "subscription",
     customer: customerId,
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${appUrl}/dashboard/billing?success=true`,
-    cancel_url: `${appUrl}/dashboard/billing`,
+    success_url: `${appUrl}/dashboard/settings/billing?success=true`,
+    cancel_url: `${appUrl}/dashboard/settings/billing`,
     // client_reference_id permet au webhook de retrouver l'org au tout premier
     // checkout (avant que stripe_customer_id ne soit persisté en DB).
     client_reference_id: org.id,

@@ -43,7 +43,7 @@ export function UpgradeBanner({
         suivantes.
       </p>
       <Link
-        href="/dashboard/billing"
+        href="/dashboard/settings/billing"
         className={buttonVariants({ variant: "default" }) + " mt-3"}
       >
         Upgrader

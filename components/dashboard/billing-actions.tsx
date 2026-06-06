@@ -118,7 +118,7 @@ function ChangePlanButton({
       // Redirige vers une URL propre (sans ?success=true résiduel d'un
       // checkout précédent) plutôt que reload — évite que la bannière
       // "Abonnement activé" reste collée.
-      window.location.href = "/dashboard/billing";
+      window.location.href = "/dashboard/settings/billing";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
       setLoading(false);

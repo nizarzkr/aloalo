@@ -19,7 +19,7 @@ export function BillingSuccessBanner() {
     const t = setTimeout(() => {
       setVisible(false);
       // Remplace l'URL sans ?success=true (history.replaceState, pas de refetch).
-      router.replace("/dashboard/billing", { scroll: false });
+      router.replace("/dashboard/settings/billing", { scroll: false });
     }, 3000);
     return () => clearTimeout(t);
   }, [router]);
