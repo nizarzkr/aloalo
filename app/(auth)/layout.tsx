@@ -11,7 +11,7 @@ export default function AuthLayout({
         <div className="mb-8 flex justify-center">
           <Link
             href="/"
-            className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-2xl font-bold tracking-tight text-transparent"
+            className="font-heading text-2xl font-bold tracking-tight text-foreground"
           >
             Aloalo
           </Link>

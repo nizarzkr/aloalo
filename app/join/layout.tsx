@@ -10,7 +10,7 @@ export default function JoinLayout({
       <div className="mb-8">
         <Link
           href="/"
-          className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-2xl font-bold tracking-tight text-transparent"
+          className="font-heading text-2xl font-bold tracking-tight text-foreground"
         >
           Aloalo
         </Link>

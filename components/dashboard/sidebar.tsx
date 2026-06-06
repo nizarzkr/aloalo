@@ -67,7 +67,7 @@ function SidebarContent({
         <Link
           href="/dashboard"
           onClick={onNavigate}
-          className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-xl font-bold tracking-tight text-transparent"
+          className="font-heading text-xl font-bold tracking-tight text-foreground"
         >
           Aloalo
         </Link>
@@ -153,7 +153,7 @@ export function Sidebar(props: SidebarProps) {
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border/60 bg-card px-4 md:hidden">
         <Link
           href="/dashboard"
-          className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-lg font-bold tracking-tight text-transparent"
+          className="font-heading text-lg font-bold tracking-tight text-foreground"
         >
           Aloalo
         </Link>
