@@ -57,6 +57,46 @@ export type DimensionEval = {
   evidence: string | null   // citation EXACTE qui justifie le statut, ou null
 }
 
+// --- Signaux comportementaux (J22) ----------------------------------------
+// Lus par l'IA dans le même appel : le SENS de la conversation (intention,
+// engagement), en complément des métriques déterministes du J20 (le rythme).
+
+// Réaction du commercial au « trop cher » : creusage (idéal, il questionne) >
+// esquive (il évite) > panique (remise immédiate). non_applicable si pas
+// d'objection prix.
+export type PriceReaction = 'creusage' | 'esquive' | 'panique' | 'non_applicable'
+
+// Après une objection : encaisse (tient le silence, laisse le prospect parler)
+// vs comble (remplit le vide, souvent par une remise). non_applicable sinon.
+export type SilenceAfterObjection = 'encaisse' | 'comble' | 'non_applicable'
+
+// Fermeté de la prochaine étape côté prospect : ferme (il propose/accepte une
+// date précise) / mou (« envoyez une plaquette ») / absent.
+export type NextStepFirmness = 'ferme' | 'mou' | 'absent'
+
+// Nature de l'objection principale : vraie (engagement — il veut être
+// convaincu) / fausse (désengagement poli) / aucune.
+export type ObjectionNature = 'vraie' | 'fausse' | 'aucune'
+
+export type BuyingSignal = {
+  quote: string   // citation EXACTE du prospect qui se projette
+  label: string   // étiquette courte (ex: "Question d'implémentation")
+}
+
+export type BehavioralSignals = {
+  // Côté commercial
+  open_questions: number
+  closed_questions: number
+  price_reaction: PriceReaction
+  silence_after_objection: SilenceAfterObjection
+  // Côté prospect (engagement)
+  buying_signals: BuyingSignal[]          // max 5
+  next_step_firmness: NextStepFirmness
+  objection_nature: ObjectionNature
+  objection_quote: string                 // citation de l'objection clé, ou ""
+  constructive_interruptions: number
+}
+
 /**
  * Tâche de suivi spécifique à l'appel, proposée par l'IA (et non générique).
  * `due_date` est une date absolue AAAA-MM-JJ calculée par Claude à partir de
@@ -82,6 +122,7 @@ export type CallAnalysis = {
   score_closing: number             // 0-100
   score_next_step: number           // 0-100
   dimensions: DimensionEval[]       // scoring factuel affiché sur le détail (J21) — 5 dimensions
+  behavioral_signals: BehavioralSignals  // signaux comportementaux IA (J22)
   summary: string                   // 2-3 phrases
   strengths: StrengthOrWeakness[]   // max 3
   weaknesses: StrengthOrWeakness[]  // max 3
@@ -205,6 +246,82 @@ const ANALYSIS_TOOL: Anthropic.Tool = {
           required: ['key', 'status', 'criteria', 'evidence'],
         },
       },
+      behavioral_signals: {
+        type: 'object',
+        description:
+          "Signaux comportementaux QUALITATIFS lus dans l'appel — deux volets, commercial et prospect. Compte les questions, classe les réactions, cite les signaux d'achat. Sois factuel et n'invente jamais : si un signal n'existe pas, utilise la valeur 'non_applicable' / 'aucune' / 0 / tableau vide.",
+        properties: {
+          open_questions: {
+            type: 'integer',
+            minimum: 0,
+            description: "Nombre de questions OUVERTES posées par le commercial (qui appellent une réponse développée : « comment… », « pourquoi… », « racontez-moi… »).",
+          },
+          closed_questions: {
+            type: 'integer',
+            minimum: 0,
+            description: "Nombre de questions FERMÉES posées par le commercial (réponse oui/non ou factuelle courte).",
+          },
+          price_reaction: {
+            type: 'string',
+            enum: ['creusage', 'esquive', 'panique', 'non_applicable'],
+            description: "Réaction du commercial face à une objection prix (« c'est trop cher »). creusage = il questionne/reformule avant de répondre (idéal). esquive = il évite le sujet. panique = il lâche une remise immédiate. non_applicable = aucune objection prix dans l'appel.",
+          },
+          silence_after_objection: {
+            type: 'string',
+            enum: ['encaisse', 'comble', 'non_applicable'],
+            description: "Après une objection : encaisse = le commercial tient le silence et laisse le prospect s'exprimer. comble = il remplit le vide immédiatement (souvent par une concession). non_applicable = pas d'objection.",
+          },
+          buying_signals: {
+            type: 'array',
+            maxItems: 5,
+            description: "Moments où le PROSPECT se projette (signaux d'achat) : questions d'implémentation (« combien de temps pour installer ? », « ça s'intègre avec notre ERP ? »), questions financières/légales (« facturé au mois ou à l'année ? », « conditions de sortie ? »). Tableau vide si aucun.",
+            items: {
+              type: 'object',
+              properties: {
+                quote: {
+                  type: 'string',
+                  description: "Citation EXACTE du prospect, recopiée mot pour mot.",
+                },
+                label: {
+                  type: 'string',
+                  description: "Étiquette courte du signal (ex: « Question d'implémentation », « Question tarifaire », « Projection d'usage »).",
+                },
+              },
+              required: ['quote', 'label'],
+            },
+          },
+          next_step_firmness: {
+            type: 'string',
+            enum: ['ferme', 'mou', 'absent'],
+            description: "Engagement du prospect sur la prochaine étape. ferme = il propose ou accepte une date précise (« on se reparle mardi ? »). mou = évasif (« envoyez une plaquette, on vous recontacte »). absent = aucune suite évoquée.",
+          },
+          objection_nature: {
+            type: 'string',
+            enum: ['vraie', 'fausse', 'aucune'],
+            description: "Nature de l'objection PRINCIPALE du prospect. vraie = signe d'engagement, il cherche à être convaincu (« votre concurrent fait pareil 20 % moins cher, pourquoi vous ? »). fausse = désengagement poli (« super mais pas le temps en ce moment »). aucune = pas d'objection notable.",
+          },
+          objection_quote: {
+            type: 'string',
+            description: "Citation EXACTE de l'objection principale du prospect, ou chaîne VIDE si objection_nature = aucune.",
+          },
+          constructive_interruptions: {
+            type: 'integer',
+            minimum: 0,
+            description: "Nombre de fois où le prospect INTERROMPT le commercial pour creuser/préciser (« attendez, revenez sur l'écran d'avant ») — signe d'engagement fort. 0 si aucune.",
+          },
+        },
+        required: [
+          'open_questions',
+          'closed_questions',
+          'price_reaction',
+          'silence_after_objection',
+          'buying_signals',
+          'next_step_firmness',
+          'objection_nature',
+          'objection_quote',
+          'constructive_interruptions',
+        ],
+      },
       summary: {
         type: 'string',
         description: "Résumé de l'appel en 2-3 phrases : contexte du prospect, sujet abordé, issue de l'appel.",
@@ -310,6 +427,7 @@ const ANALYSIS_TOOL: Anthropic.Tool = {
       'score_closing',
       'score_next_step',
       'dimensions',
+      'behavioral_signals',
       'summary',
       'strengths',
       'weaknesses',
@@ -336,6 +454,8 @@ Cadre d'analyse (les 5 dimensions, à évaluer aussi factuellement dans \`dimens
 - **Next step** : prochaine étape claire, datée précisément (jour + heure), engageante des deux côtés.
 
 Le scoring chiffré (score_*) sert au pilotage interne. Le scoring FACTUEL (\`dimensions\`) est ce que lit le commercial : pour chaque dimension, un statut (validé/partiel/manqué) justifié par une checklist de critères et une citation exacte. La cohérence entre score et statut est attendue (un score bas ⇒ statut partiel/manqué).
+
+Tu produis aussi des SIGNAUX COMPORTEMENTAUX (\`behavioral_signals\`) — le « radar à problèmes ». Côté commercial : compte les questions ouvertes vs fermées, classe sa réaction à une objection prix (creusage/esquive/panique) et sa tenue du silence après objection (encaisse/comble). Côté prospect (engagement) : repère les signaux d'achat (citations exactes), la fermeté du next step (ferme/mou/absent), la nature vraie/fausse de l'objection, et les interruptions constructives. Reste strictement factuel : si un signal n'existe pas dans l'appel, mets la valeur neutre (non_applicable / aucune / 0 / tableau vide). N'invente jamais une citation.
 
 En plus de l'évaluation, tu produis deux sorties orientées ACTION, propres à cet appel :
 - **followup_points** : ce que le commercial doit penser à mettre dans son email de suivi (infos demandées/promises non encore fournies, engagements pris par le prospect). Tu décides toi-même de ce qui mérite d'y figurer, en fonction de ce que dit réellement l'appel.
@@ -445,9 +565,10 @@ export async function analyzeCall(
 
   const response = await client.messages.create({
     model: ANALYSIS_MODEL,
-    // 4096 (vs 3072) pour absorber le scoring factuel par dimensions (J21) en
-    // plus des forces/faiblesses/coaching/suivi déjà produits.
-    max_tokens: 4096,
+    // 5120 : marge pour les dimensions (J21) + signaux comportementaux (J22)
+    // en plus des forces/faiblesses/coaching/suivi. Éviter toute troncature de
+    // la sortie tool_use (qui produirait un JSON invalide).
+    max_tokens: 5120,
     temperature: 0,
     system: SYSTEM_PROMPT,
     tools: [ANALYSIS_TOOL],

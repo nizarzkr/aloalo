@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Settings } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -11,7 +10,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CallStatusBadge } from "@/components/dashboard/call-status-badge";
+import { ListAutoRefresh } from "@/components/dashboard/list-auto-refresh";
+import { revalidateDashboardHome } from "@/app/dashboard/calls/actions";
 import { createClient } from "@/lib/supabase/server";
+import { buildSignature, IN_PROGRESS_STATUSES } from "@/lib/call-status";
 import { cn } from "@/lib/utils";
 
 // Début de la semaine en cours (lundi 00:00 dans la timezone du serveur).
@@ -34,27 +37,6 @@ function formatDuration(totalSeconds: number) {
   if (h === 0) return `${m}min`;
   return `${h}h ${m}min`;
 }
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: "En attente",
-  transcribing: "Transcription",
-  transcribed: "Transcrit",
-  analyzing: "Analyse",
-  analyzed: "Analysé",
-  failed: "Échec",
-};
-
-const STATUS_VARIANT: Record<
-  string,
-  "default" | "secondary" | "destructive" | "outline"
-> = {
-  pending: "secondary",
-  transcribing: "secondary",
-  transcribed: "secondary",
-  analyzing: "secondary",
-  analyzed: "default",
-  failed: "destructive",
-};
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -88,33 +70,51 @@ export default async function DashboardPage() {
   // en profondeur — et pour court-circuiter si l'org n'est pas encore connue.
   const orgFilter = orgId ?? "00000000-0000-0000-0000-000000000000";
 
-  const [weekCallsRes, scoresRes, durationsRes, latestCallsRes] =
-    await Promise.all([
-      supabase
-        .from("calls")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", orgFilter)
-        .eq("status", "analyzed")
-        .gte("created_at", weekStartIso),
-      supabase
-        .from("analyses")
-        .select("score_global")
-        .eq("organization_id", orgFilter)
-        .gte("created_at", sevenDaysAgoIso),
-      supabase
-        .from("calls")
-        .select("duration_seconds")
-        .eq("organization_id", orgFilter)
-        .eq("status", "analyzed"),
-      supabase
-        .from("calls")
-        .select(
-          "id, started_at, created_at, duration_seconds, status, contact_name, callee_number, company_name, deal_name, analyses ( score_global )",
-        )
-        .eq("organization_id", orgFilter)
-        .order("created_at", { ascending: false })
-        .limit(5),
-    ]);
+  const [
+    weekCallsRes,
+    scoresRes,
+    durationsRes,
+    latestCallsRes,
+    inProgressRes,
+  ] = await Promise.all([
+    supabase
+      .from("calls")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgFilter)
+      .eq("status", "analyzed")
+      .gte("created_at", weekStartIso),
+    supabase
+      .from("analyses")
+      .select("score_global")
+      .eq("organization_id", orgFilter)
+      .gte("created_at", sevenDaysAgoIso),
+    supabase
+      .from("calls")
+      .select("duration_seconds")
+      .eq("organization_id", orgFilter)
+      .eq("status", "analyzed"),
+    supabase
+      .from("calls")
+      .select(
+        "id, started_at, created_at, duration_seconds, status, contact_name, callee_number, company_name, deal_name, analyses ( score_global )",
+      )
+      .eq("organization_id", orgFilter)
+      .order("created_at", { ascending: false })
+      .limit(5),
+    // Appels en cours (toutes pages) → signature pour le suivi live des badges.
+    supabase
+      .from("calls")
+      .select("id, status")
+      .eq("organization_id", orgFilter)
+      .in("status", [...IN_PROGRESS_STATUSES]),
+  ]);
+
+  const inProgressRows = (inProgressRes.data ?? []) as Array<{
+    id: string;
+    status: string;
+  }>;
+  const liveSignature = buildSignature(inProgressRows);
+  const liveActive = inProgressRows.length > 0;
 
   const weekCount = weekCallsRes.count ?? 0;
 
@@ -157,6 +157,14 @@ export default async function DashboardPage() {
           {firstName ? `Bienvenue, ${firstName}` : "Bienvenue"}
         </h1>
       </header>
+
+      {/* Moteur de rafraîchissement automatique (invisible) : met à jour les
+          badges des derniers appels tant qu'un appel est en cours. */}
+      <ListAutoRefresh
+        signature={liveSignature}
+        active={liveActive}
+        onRevalidate={revalidateDashboardHome}
+      />
 
       <section className="grid gap-4 sm:grid-cols-3">
         {kpis.map(({ label, value }) => (
@@ -247,9 +255,7 @@ export default async function DashboardPage() {
                         <span className="min-w-10 text-right text-sm font-semibold tabular-nums">
                           {score !== null ? `${score}%` : "–"}
                         </span>
-                        <Badge variant={STATUS_VARIANT[status] ?? "secondary"}>
-                          {STATUS_LABEL[status] ?? status}
-                        </Badge>
+                        <CallStatusBadge status={status} />
                       </Link>
                     </li>
                   );

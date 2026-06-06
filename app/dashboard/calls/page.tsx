@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PhoneCall, Play } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -12,8 +11,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CallsFilterBar } from "@/components/dashboard/calls-filter-bar";
+import { CallStatusBadge } from "@/components/dashboard/call-status-badge";
 import { EmptyState } from "@/components/dashboard/empty-state";
+import { ListAutoRefresh } from "@/components/dashboard/list-auto-refresh";
+import { revalidateCallsList } from "@/app/dashboard/calls/actions";
 import { createClient } from "@/lib/supabase/server";
+import { buildSignature, IN_PROGRESS_STATUSES } from "@/lib/call-status";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 15;
@@ -43,27 +46,6 @@ function formatDuration(totalSeconds: number) {
   if (h === 0) return `${m}min`;
   return `${h}h ${m}min`;
 }
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: "En attente",
-  transcribing: "Transcription",
-  transcribed: "Transcrit",
-  analyzing: "Analyse",
-  analyzed: "Analysé",
-  failed: "Échec",
-};
-
-const STATUS_VARIANT: Record<
-  string,
-  "default" | "secondary" | "destructive" | "outline"
-> = {
-  pending: "secondary",
-  transcribing: "secondary",
-  transcribed: "secondary",
-  analyzing: "secondary",
-  analyzed: "default",
-  failed: "destructive",
-};
 
 type CallsSearchParams = {
   period?: string;
@@ -140,6 +122,20 @@ export default async function CallsListPage({
   const { data: callsData, count } = await query;
   const calls = callsData ?? [];
   const totalCount = count ?? 0;
+
+  // Appels en cours de l'org (toutes pages) → signature pour le suivi live.
+  // La liste se rafraîchit seule tant qu'au moins un appel n'est pas terminé.
+  const { data: inProgressData } = await supabase
+    .from("calls")
+    .select("id, status")
+    .eq("organization_id", orgFilter)
+    .in("status", [...IN_PROGRESS_STATUSES]);
+  const inProgressRows = (inProgressData ?? []) as Array<{
+    id: string;
+    status: string;
+  }>;
+  const liveSignature = buildSignature(inProgressRows);
+  const liveActive = inProgressRows.length > 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   // Construit l'URL d'une autre page en conservant les filtres actifs.
@@ -172,6 +168,14 @@ export default async function CallsListPage({
           {totalCount} appel{totalCount > 1 ? "s" : ""} au total
         </p>
       </header>
+
+      {/* Moteur de rafraîchissement automatique (invisible) : met à jour les
+          badges tant qu'un appel est en cours. Le signal vit dans les badges. */}
+      <ListAutoRefresh
+        signature={liveSignature}
+        active={liveActive}
+        onRevalidate={revalidateCallsList}
+      />
 
       <div className="mb-6">
         <CallsFilterBar />
@@ -262,9 +266,7 @@ export default async function CallsListPage({
                         <span className="min-w-10 text-right text-sm font-semibold tabular-nums">
                           {scoreValue !== null ? `${scoreValue}%` : "–"}
                         </span>
-                        <Badge variant={STATUS_VARIANT[status] ?? "secondary"}>
-                          {STATUS_LABEL[status] ?? status}
-                        </Badge>
+                        <CallStatusBadge status={status} />
                       </Link>
                     </li>
                   );

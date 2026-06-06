@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   CalendarClock,
   CheckCircle2,
-  Clock,
   ExternalLink,
   FileQuestion,
   ListChecks,
@@ -26,6 +25,8 @@ import { UpgradeBanner } from "@/components/dashboard/upgrade-banner";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { HubspotRefreshButton } from "@/components/dashboard/hubspot-refresh-button";
 import { ConversationDynamics } from "@/components/dashboard/conversation-dynamics";
+import { CallProgress } from "@/components/dashboard/call-progress";
+import { BehavioralSignals as BehavioralSignalsView } from "@/components/dashboard/behavioral-signals";
 import { CallTabs, type CallTab } from "@/components/dashboard/call-tabs";
 import { CallSynthesis } from "@/components/dashboard/call-synthesis";
 import { DimensionsEval } from "@/components/dashboard/dimensions-eval";
@@ -33,7 +34,7 @@ import {
   computeConversationMetrics,
   type ConversationMetrics,
 } from "@/lib/metrics/conversation";
-import type { DimensionEval } from "@/lib/claude";
+import type { DimensionEval, BehavioralSignals } from "@/lib/claude";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -236,6 +237,7 @@ export default async function CallDetailPage({
         suggested_tasks,
         conversation_metrics,
         dimensions,
+        behavioral_signals,
         used_ai_profile
       )
     `,
@@ -363,6 +365,10 @@ export default async function CallDetailPage({
   // l'ancien affichage chiffré (repli legacy ci-dessous).
   const dimensions = asArray<DimensionEval>(analysis?.dimensions);
   const hasMissedDimension = dimensions.some((d) => d.status === "manqué");
+
+  // Signaux comportementaux IA (J22) — null pour les analyses pré-J22.
+  const behavioralSignals = (analysis?.behavioral_signals ??
+    null) as BehavioralSignals | null;
 
   // Nombre de signaux conversationnels (J20) à surveiller — alimente la barre
   // de synthèse et la pastille de l'onglet Dynamique.
@@ -702,12 +708,26 @@ export default async function CallDetailPage({
       content: evaluationContent,
     });
   }
-  if (conversationMetrics && conversationMetrics.total_talk_ms > 0) {
+  const hasMetrics = Boolean(
+    conversationMetrics && conversationMetrics.total_talk_ms > 0,
+  );
+  if (hasMetrics || behavioralSignals) {
     tabs.push({
       id: "dynamique",
       label: "Dynamique",
       alert: signalsCount > 0,
-      content: <ConversationDynamics metrics={conversationMetrics} />,
+      content: (
+        <div className="grid gap-8">
+          {/* Déterministe (J20) : le rythme. */}
+          {hasMetrics && conversationMetrics ? (
+            <ConversationDynamics metrics={conversationMetrics} />
+          ) : null}
+          {/* IA (J22) : le sens / l'engagement. */}
+          {behavioralSignals ? (
+            <BehavioralSignalsView signals={behavioralSignals} />
+          ) : null}
+        </div>
+      ),
     });
   }
   if (isAnalyzed) {
@@ -766,32 +786,31 @@ export default async function CallDetailPage({
       {/* État de l'analyse — affiché si l'appel n'a pas encore d'analyse exploitable */}
       {showAnalysisStateBlock ? (
         <section className="mb-10">
-          <Card className="p-2">
-            <CardContent>
-              {isFailedNonUsage ? (
-                <EmptyState
-                  icon={AlertTriangle}
-                  title="L'analyse a échoué"
-                  description={
-                    errorMsg ??
-                    "L'analyse n'a pas pu aboutir. Réessayez plus tard ou contactez le support."
-                  }
-                />
-              ) : isAnalyzedButMissing ? (
-                <EmptyState
-                  icon={FileQuestion}
-                  title="Analyse introuvable"
-                  description="L'analyse de cet appel n'a pas pu être chargée. Réessayez dans un instant."
-                />
-              ) : (
-                <EmptyState
-                  icon={Clock}
-                  title="Analyse en cours"
-                  description="Votre appel est en cours de traitement (transcription puis analyse IA). Le résultat apparaîtra ici dans quelques instants — actualisez la page."
-                />
-              )}
-            </CardContent>
-          </Card>
+          {isInProgress ? (
+            // Stepper de phase + auto-rafraîchissement (suivi live du pipeline).
+            <CallProgress callId={call.id as string} initialStatus={status} />
+          ) : (
+            <Card className="p-2">
+              <CardContent>
+                {isFailedNonUsage ? (
+                  <EmptyState
+                    icon={AlertTriangle}
+                    title="L'analyse a échoué"
+                    description={
+                      errorMsg ??
+                      "L'analyse n'a pas pu aboutir. Réessayez plus tard ou contactez le support."
+                    }
+                  />
+                ) : (
+                  <EmptyState
+                    icon={FileQuestion}
+                    title="Analyse introuvable"
+                    description="L'analyse de cet appel n'a pas pu être chargée. Réessayez dans un instant."
+                  />
+                )}
+              </CardContent>
+            </Card>
+          )}
         </section>
       ) : null}
 
