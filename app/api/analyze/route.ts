@@ -333,12 +333,18 @@ export async function POST(req: NextRequest) {
           sync.contact_id = contact.id
 
           // Note de synthèse (inclut désormais les points à mettre dans le mail).
-          const noteId = await createNote(
-            contact.id,
-            buildNoteSummary(analysis),
-            hubspotToken,
-          )
-          if (noteId) sync.note_id = noteId
+          // Échec non bloquant : on tente quand même les tâches ensuite.
+          try {
+            const noteId = await createNote(
+              contact.id,
+              buildNoteSummary(analysis),
+              hubspotToken,
+            )
+            if (noteId) sync.note_id = noteId
+            else sync.note_error = 'createNote a renvoyé null (voir logs)'
+          } catch (e) {
+            sync.note_error = e instanceof Error ? e.message : 'unknown'
+          }
 
           // Tâches contextuelles proposées par l'IA (max 3). Repli : une tâche
           // J+2 si l'IA n'en a remonté aucune (garde-fou, jamais générique sinon).
@@ -354,23 +360,32 @@ export async function POST(req: NextRequest) {
                   },
                 ]
 
+          // Chaque tâche dans son propre try : une qui échoue n'annule pas les autres.
           const createdTasks: Array<Record<string, unknown>> = []
           for (const t of tasksToCreate) {
-            const dueDateMs = resolveDueDateMs(t.due_date)
-            const taskId = await createTask(
-              contact.id,
-              t.title,
-              dueDateMs,
-              hubspotToken,
-              t.reason,
-            )
-            createdTasks.push({
-              title: t.title,
-              due_date: new Date(dueDateMs).toISOString(),
-              reason: t.reason,
-              task_id: taskId,
-              pushed: Boolean(taskId),
-            })
+            try {
+              const dueDateMs = resolveDueDateMs(t.due_date)
+              const taskId = await createTask(
+                contact.id,
+                t.title,
+                dueDateMs,
+                hubspotToken,
+                t.reason,
+              )
+              createdTasks.push({
+                title: t.title,
+                due_date: new Date(dueDateMs).toISOString(),
+                reason: t.reason,
+                task_id: taskId,
+                pushed: Boolean(taskId),
+              })
+            } catch (e) {
+              createdTasks.push({
+                title: t.title,
+                pushed: false,
+                error: e instanceof Error ? e.message : 'unknown',
+              })
+            }
           }
           sync.tasks = createdTasks
 
@@ -382,7 +397,9 @@ export async function POST(req: NextRequest) {
       }
     } catch (err) {
       // HubSpot/Claude down ne doit jamais impacter le pipeline d'analyse.
+      // On persiste le message pour diagnostic (visible dans hubspot_sync_status).
       sync.status = 'error'
+      sync.error = err instanceof Error ? err.message : 'unknown'
       console.error(
         '[analyze] automation post-analyse échouée',
         err instanceof Error ? err.message : 'unknown',
