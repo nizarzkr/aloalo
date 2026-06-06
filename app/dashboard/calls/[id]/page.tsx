@@ -33,6 +33,11 @@ import { UpgradeBanner } from "@/components/dashboard/upgrade-banner";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { HubspotRefreshButton } from "@/components/dashboard/hubspot-refresh-button";
 import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
+import { ConversationDynamics } from "@/components/dashboard/conversation-dynamics";
+import {
+  computeConversationMetrics,
+  type ConversationMetrics,
+} from "@/lib/metrics/conversation";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -233,6 +238,7 @@ export default async function CallDetailPage({
         coaching_advice,
         followup_points,
         suggested_tasks,
+        conversation_metrics,
         used_ai_profile
       )
     `,
@@ -264,6 +270,16 @@ export default async function CallDetailPage({
   const subtitleParts = [companyName, dealName].filter(Boolean) as string[];
 
   const segments = asArray<TranscriptSegment>(call.transcript_segments);
+
+  // Métriques conversationnelles (J20). On privilégie la valeur PERSISTÉE
+  // (calculée à l'analyse), avec un SECOURS de calcul à la volée depuis les
+  // segments pour les appels analysés AVANT le J20 (colonne nulle) — évite tout
+  // backfill. `null` reste possible si on n'a ni colonne ni segments.
+  const storedMetrics = (analysis?.conversation_metrics ??
+    null) as ConversationMetrics | null;
+  const conversationMetrics: ConversationMetrics | null =
+    storedMetrics ??
+    (segments.length > 0 ? computeConversationMetrics(segments) : null);
 
   // États d'absence d'analyse — on les distingue pour donner un message clair.
   // USAGE_LIMIT_REACHED a déjà sa propre bannière (UpgradeBanner) au-dessus,
@@ -495,6 +511,20 @@ export default async function CallDetailPage({
             })}
           </div>
           </div>
+        </CollapsibleSection>
+      ) : null}
+
+      {/* ================== Dynamique de l'appel ================== */}
+      {/* Métriques déterministes (J20) — calculées sans IA depuis la
+          diarisation. Affichées dès qu'on a de la parole exploitable, même
+          sans analyse IA (appel seulement transcrit). */}
+      {conversationMetrics && conversationMetrics.total_talk_ms > 0 ? (
+        <CollapsibleSection
+          icon="activity"
+          title="Dynamique de l'appel"
+          description="Temps de parole, rythme des échanges et signaux faibles — mesurés sur la conversation, sans IA."
+        >
+          <ConversationDynamics metrics={conversationMetrics} />
         </CollapsibleSection>
       ) : null}
 

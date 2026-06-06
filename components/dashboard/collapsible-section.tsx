@@ -14,6 +14,7 @@
 
 import { useState, type ReactNode } from "react";
 import {
+  Activity,
   ChevronDown,
   Gauge,
   Lightbulb,
@@ -27,6 +28,7 @@ import { cn } from "@/lib/utils";
 // (composant icône) d'un Server Component vers ce composant client. On passe
 // donc une clé string et on résout l'icône ici, où lucide est bundlé côté client.
 const ICONS = {
+  activity: Activity,
   gauge: Gauge,
   lightbulb: Lightbulb,
   "list-todo": ListTodo,

@@ -30,6 +30,7 @@ import { createNote, createTask } from '@/lib/hubspot'
 import type { HubspotTarget } from '@/lib/hubspot'
 import { enrichCallFromHubspot } from '@/lib/hubspot-sync'
 import type { TranscriptSegment } from '@/lib/assemblyai'
+import { computeConversationMetrics } from '@/lib/metrics/conversation'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
 import type { AiProfileData } from '@/lib/validations'
 import {
@@ -247,12 +248,18 @@ export async function POST(req: NextRequest) {
   // 5. Calculer le coût + insérer l'analyse
   const costEur = estimateCostEur(usage.input_tokens, usage.output_tokens)
 
+  // Métriques conversationnelles déterministes (J20) — calcul pur sur la
+  // diarisation, zéro coût IA. Persistées pour le pilotage (tri/agrégation SQL
+  // au J24). La page détail recalcule en secours si la colonne est nulle.
+  const conversationMetrics = computeConversationMetrics(segments)
+
   const { data: inserted, error: insertError } = await supabase
     .from('analyses')
     .insert({
       call_id: callId,
       organization_id: call.organization_id,
       ...analysis,            // score_global, score_discovery, ..., summary, strengths, weaknesses, coaching_advice
+      conversation_metrics: conversationMetrics,
       model_used: ANALYSIS_MODEL,
       cost_eur: costEur,
       used_ai_profile: usedAiProfile,
