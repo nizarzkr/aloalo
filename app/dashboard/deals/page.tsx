@@ -41,9 +41,11 @@ function engagementTone(value: number | null): string {
 }
 
 function dealTitle(d: DealSummary): string {
+  // On privilégie le NOM DU DEAL (ex. « Acme Corp — Déploiement Q3 »), puis
+  // l'entreprise, puis le contact, et enfin le numéro en dernier recours.
   return (
-    [d.contact_name, d.company_name].filter(Boolean).join(" · ") ||
     d.deal_name ||
+    [d.company_name, d.contact_name].filter(Boolean).join(" · ") ||
     d.group_key.replace(/^phone:/, "")
   );
 }
