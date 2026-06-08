@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  Briefcase,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -28,6 +29,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/calls", label: "Appels", icon: Phone },
+  { href: "/dashboard/deals", label: "Deals", icon: Briefcase },
   { href: "/dashboard/team", label: "Équipe", icon: Users },
   { href: "/dashboard/settings", label: "Paramètres", icon: Settings },
 ];

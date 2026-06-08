@@ -243,14 +243,14 @@ export default async function DealMomentumPage({
               </p>
               <ul className="space-y-1.5">
                 {momentum.reasons.map((r, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-muted-foreground">
+                  <li key={`${r.code}-${i}`} className="flex gap-2 text-sm text-muted-foreground">
                     <span
                       className={cn(
                         "mt-1.5 size-1.5 shrink-0 rounded-full",
                         momentum.trend === "baisse" ? "bg-red-400" : "bg-mint",
                       )}
                     />
-                    {r}
+                    {r.text}
                   </li>
                 ))}
               </ul>

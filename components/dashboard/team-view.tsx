@@ -63,9 +63,9 @@ type Props = {
   pending: PendingInvitation[];
   isOwner: boolean;
   currentUserId: string;
-  // Slot server-rendered (cf. team-leaderboard.tsx) inséré au-dessus de la
-  // liste des membres. Passé en ReactNode pour pouvoir mélanger composant
-  // serveur et client sans hisser tout le calcul ici.
+  // Slot server-rendered optionnel inséré au-dessus de la liste des membres.
+  // Actuellement inutilisé (le pilotage des deals vit sur /dashboard/deals) ;
+  // conservé pour un éventuel encart d'équipe futur.
   leaderboard?: ReactNode;
 };
 

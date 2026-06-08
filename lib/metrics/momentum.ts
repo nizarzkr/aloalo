@@ -50,6 +50,21 @@ export type DealCallPoint = {
 export type MomentumTrend = 'hausse' | 'stable' | 'baisse' | 'indéterminé'
 
 /**
+ * Code structuré d'un signal de trajectoire. Sert à l'affichage (texte) ET au
+ * moteur d'alerte coaching (J24), qui mappe un code → une action 1:1.
+ */
+export type MomentumSignalCode =
+  | 'buying_drop' // moins de signaux d'achat du prospect
+  | 'next_step_weaker' // next step qui se ramollit (ferme → mou/absent)
+  | 'prospect_quieter' // le prospect parle de moins en moins
+  | 'objection_fake' // dernière objection « fausse » (désengagement poli)
+  | 'crm_slow_velocity' // délai de réponse email qui s'allonge (off-call)
+  | 'crm_mono_thread' // un seul interlocuteur côté prospect (off-call)
+  | 'insufficient_data' // pas assez d'appels pour conclure
+
+export type MomentumReason = { code: MomentumSignalCode; text: string }
+
+/**
  * Engagement calculé pour un appel (0-100). C'est un indice INTERNE servant à
  * tracer une courbe et comparer les appels entre eux — surtout PAS une « note »
  * affichée comme telle au commercial (on a justement tué le score sur 100 au J21).
@@ -67,9 +82,9 @@ export type DealCallEngagement = {
 export type DealMomentum = {
   points: DealCallEngagement[]
   trend: MomentumTrend
-  // Raisons en clair de la trajectoire (surtout en cas de baisse) — le « pourquoi »
-  // qui nourrira l'alerte coaching du J24.
-  reasons: string[]
+  // Raisons structurées de la trajectoire (surtout en cas de baisse) — le
+  // « pourquoi » qui nourrira l'alerte coaching du J24 (code + texte affichable).
+  reasons: MomentumReason[]
   first_engagement: number | null
   last_engagement: number | null
 }
@@ -161,17 +176,22 @@ export function computeDealMomentum(
     (e): e is DealCallEngagement & { engagement: number } => e.engagement != null,
   )
 
-  const reasons: string[] = []
+  const reasons: MomentumReason[] = []
 
   // Pas assez de matière → on n'invente pas de tendance.
   if (scored.length < MOMENTUM_THRESHOLDS.minPointsForTrend) {
     return {
       points: engagements,
       trend: 'indéterminé',
-      reasons:
-        scored.length === 0
-          ? ['Aucun appel analysé pour ce prospect.']
-          : ['Un seul appel analysé — pas encore de trajectoire.'],
+      reasons: [
+        {
+          code: 'insufficient_data',
+          text:
+            scored.length === 0
+              ? 'Aucun appel analysé pour ce prospect.'
+              : 'Un seul appel analysé — pas encore de trajectoire.',
+        },
+      ],
       first_engagement: scored[0]?.engagement ?? null,
       last_engagement: scored[scored.length - 1]?.engagement ?? null,
     }
@@ -194,13 +214,19 @@ export function computeDealMomentum(
   const buyingFirst = firstSrc?.behavioral_signals?.buying_signals?.length ?? 0
   const buyingLast = lastSrc?.behavioral_signals?.buying_signals?.length ?? 0
   if (buyingLast < buyingFirst) {
-    reasons.push(`Signaux d'achat du prospect : ${buyingFirst} → ${buyingLast}.`)
+    reasons.push({
+      code: 'buying_drop',
+      text: `Signaux d'achat du prospect : ${buyingFirst} → ${buyingLast}.`,
+    })
   }
 
   const firmFirst = firstSrc?.behavioral_signals?.next_step_firmness
   const firmLast = lastSrc?.behavioral_signals?.next_step_firmness
   if (firmFirst && firmLast && firmnessScore(firmLast) < firmnessScore(firmFirst)) {
-    reasons.push(`Prochaine étape : « ${firmFirst} » → « ${firmLast} ».`)
+    reasons.push({
+      code: 'next_step_weaker',
+      text: `Prochaine étape : « ${firmFirst} » → « ${firmLast} ».`,
+    })
   }
 
   const ptrFirst = firstSrc?.conversation_metrics?.prospect_talk_ratio
@@ -210,27 +236,35 @@ export function computeDealMomentum(
     ptrLast != null &&
     ptrFirst - ptrLast >= MOMENTUM_THRESHOLDS.talkRatioDropPct
   ) {
-    reasons.push(
-      `Temps de parole du prospect : ${Math.round(ptrFirst * 100)} % → ${Math.round(ptrLast * 100)} %.`,
-    )
+    reasons.push({
+      code: 'prospect_quieter',
+      text: `Temps de parole du prospect : ${Math.round(ptrFirst * 100)} % → ${Math.round(ptrLast * 100)} %.`,
+    })
   }
 
   if (
     lastSrc?.behavioral_signals?.objection_nature === 'fausse' &&
     firstSrc?.behavioral_signals?.objection_nature !== 'fausse'
   ) {
-    reasons.push('Dernière objection devenue « fausse » (désengagement poli).')
+    reasons.push({
+      code: 'objection_fake',
+      text: 'Dernière objection devenue « fausse » (désengagement poli).',
+    })
   }
 
   // Raisons off-call (CRM) — ajoutées seulement si la donnée existe.
   if (crm) {
     if (crm.velocity_hours != null && crm.velocity_hours >= MOMENTUM_THRESHOLDS.velocitySlowHours) {
-      reasons.push(
-        `Délai de réponse email du prospect : ${Math.round(crm.velocity_hours)} h.`,
-      )
+      reasons.push({
+        code: 'crm_slow_velocity',
+        text: `Délai de réponse email du prospect : ${Math.round(crm.velocity_hours)} h.`,
+      })
     }
     if (crm.multi_threading != null && crm.multi_threading <= 1) {
-      reasons.push('Mono-threading : un seul interlocuteur côté prospect (pas de décideur en copie).')
+      reasons.push({
+        code: 'crm_mono_thread',
+        text: 'Mono-threading : un seul interlocuteur côté prospect (pas de décideur en copie).',
+      })
     }
   }
 
