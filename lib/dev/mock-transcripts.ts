@@ -546,6 +546,101 @@ const DEMO_LUMEN_SARAH: MockTranscript = buildScenario({
   ],
 })
 
+// Appel « live » à simuler PENDANT la démo (cf. demo-script.md, étape 2:00).
+// Même deal Acme (deal_id partagé) que mock-15/16 → renforce la trajectoire du
+// deal sur /dashboard/deals. Scénario riche volontairement : découverte
+// approfondie + objection concurrent (outil US moins cher) bien traitée par
+// l'angle RGPD/Europe + analyse personnalisée + next step ferme daté → la page
+// d'analyse a de la matière à montrer (dimensions validées, citations, coaching,
+// tâche de relance datée).
+const DEMO_ACME_CAMILLE_LIVE: MockTranscript = buildScenario({
+  id: 'mock-18',
+  title: 'Démo 08/06 · Acme Corp — Camille Roux (à simuler en LIVE)',
+  description: 'Deal Acme · point d\'avancement · objection concurrent US moins cher · traitée par RGPD/Europe + analyse personnalisée · next step signature daté.',
+  caller_number: DEMO_CALLER,
+  callee_number: '+33180000201',
+  contact_name: 'Camille Roux',
+  company_name: 'Acme Corp',
+  deal_name: 'Acme Corp — Déploiement Q3',
+  deal_id: DEMO_ACME_DEAL_ID,
+  turns: [
+    { speaker: 'A', text: "Bonjour Camille, Camille de Flowly. Merci de reprendre le temps après la démo. Avant qu'on parle des prochaines étapes, dites-moi : depuis notre échange, qu'est-ce qui a le plus parlé à votre équipe en interne ?" },
+    { speaker: 'B', text: "Bonjour ! Franchement la lecture par commercial a beaucoup plu, mes deux managers de site ont tout de suite vu l'intérêt. Mais je vais être transparente avec vous : on a aussi regardé un outil américain qui fait à peu près la même chose, et qui est sensiblement moins cher." },
+    { speaker: 'A', text: "Je vous remercie de me le dire franchement, c'est important qu'on en parle. Pour bien comprendre, qu'est-ce qui vous attire chez eux à part le prix, et qu'est-ce qui vous retient encore ?" },
+    { speaker: 'B', text: "Le prix surtout. Ce qui me retient, c'est que nos appels contiennent des données clients sensibles, et leur hébergement est aux États-Unis. Mon DAF Thomas est très regardant là-dessus, il m'a déjà alertée." },
+    { speaker: 'A', text: "Et il a raison de l'être. Chez nous tout est hébergé en Europe, à Paris, et l'audio est supprimé après transcription. C'est écrit dans le contrat. Donc là où l'outil américain vous expose à une zone grise RGPD que Thomas devra défendre, nous on lui enlève l'épine du pied. Sur quinze commerciaux avec des données clients, ça vaut combien d'éviter ce risque, à votre avis ?" },
+    { speaker: 'B', text: "Vu comme ça, ça change la donne, parce que c'est typiquement le genre de sujet qui peut tout bloquer en comité. Et au-delà de la conformité, est-ce qu'il y a une vraie différence sur l'analyse elle-même ?" },
+    { speaker: 'A', text: "Oui, et c'est le deuxième point. La plupart des outils notent vos appels sur un barème générique. Nous, on configure d'abord votre méthode de vente, vos objections types, votre cible, et l'analyse tourne avec vos critères à vous. Concrètement vos deux sites sont évalués sur la même grille, la vôtre, pas celle d'un éditeur américain qui ne connaît pas votre marché." },
+    { speaker: 'B', text: "C'est exactement ce qui me manque aujourd'hui pour arbitrer entre mes deux équipes sans créer de tensions. Bon, pour moi c'est clair, je veux avancer avec vous." },
+    { speaker: 'A', text: "Ravi de l'entendre. Pour sécuriser le budget côté Thomas, je vous renvoie aujourd'hui le business case chiffré avec la clause d'hébergement Europe en évidence. Vous pensez pouvoir le présenter en comité cette semaine ?" },
+    { speaker: 'B', text: "Oui, on a un comité jeudi après-midi. Si j'ai le document mercredi, je le porte et je pousse pour une décision dans la foulée." },
+    { speaker: 'A', text: "Parfait, vous l'avez mardi pour être large. Je note : business case mardi, comité jeudi, et on se rappelle vendredi matin pour acter la suite. Ça vous va ?" },
+    { speaker: 'B', text: "Ça me va très bien. Vendredi 9h30, je vous mets l'invitation. Merci Camille, c'est exactement l'accompagnement que j'attendais." },
+    { speaker: 'A', text: "Avec plaisir Camille, à vendredi 9h30 alors. Je m'occupe du business case." },
+  ],
+})
+
+// Appel supplémentaire (démo Dev/test) — MÊME deal Acme (deal_id partagé) que
+// mock-15/16/18. Nouveau contact : Karim Haddad, DSI d'Acme → multi-threading à
+// trois personnes sur le deal (championne + DAF + DSI). Prolonge la trajectoire :
+// l'objection RGPD/hébergement soulevée par Thomas est ici validée techniquement.
+// Prospect engagé, questions de sécurité concrètes → feu vert technique.
+const DEMO_ACME_KARIM: MockTranscript = buildScenario({
+  id: 'mock-19',
+  title: 'Démo 08/06 · Acme Corp — Karim Haddad (DSI, validation technique)',
+  description: 'Deal Acme · DSI · creuse hébergement EU, suppression audio, SSO, intégration téléphonie/CRM · feu vert technique.',
+  caller_number: DEMO_CALLER,
+  callee_number: '+33180000204',
+  contact_name: 'Karim Haddad',
+  company_name: 'Acme Corp',
+  deal_name: 'Acme Corp — Déploiement Q3',
+  deal_id: DEMO_ACME_DEAL_ID,
+  turns: [
+    { speaker: 'A', text: "Bonjour Karim, Camille de Flowly. Merci de prendre ce créneau. Camille Roux et Thomas m'ont dit que c'est vous qui validez le volet technique et sécurité chez Acme. Je vous propose qu'on déroule vos points, sans langue de bois." },
+    { speaker: 'B', text: "Bonjour. Oui c'est ça, je suis le DSI. Avant qu'on signe quoi que ce soit je dois être à l'aise sur l'hébergement et l'accès aux données, parce qu'on traite des données clients sensibles dans nos appels." },
+    { speaker: 'A', text: "C'est exactement le bon réflexe. Premier point, l'hébergement : toute la donnée — transcriptions, analyses, comptes — est hébergée en Europe, sur des serveurs à Paris. Rien ne sort de l'UE. Ça répond à votre première exigence ?" },
+    { speaker: 'B', text: "Oui sur le principe. Et l'audio des appels lui-même, il est stocké où, et combien de temps ?" },
+    { speaker: 'A', text: "L'audio est traité pour la transcription puis supprimé. On ne conserve que le texte et l'analyse, pas l'enregistrement brut. Donc même surface de risque réduite : il n'y a pas de bibliothèque d'enregistrements à protéger dans la durée." },
+    { speaker: 'B', text: "Ça c'est un bon point, ça nous évite tout un débat sur la rétention des enregistrements. Côté accès, comment vous gérez l'authentification ? On est sur du SSO en interne, je ne veux pas d'un énième mot de passe à gérer pour quinze commerciaux." },
+    { speaker: 'A', text: "On supporte le SSO, donc vos commerciaux se connectent avec leurs identifiants Acme habituels, et vous gardez la main sur les accès depuis votre annuaire. Quand quelqu'un quitte l'entreprise, vous le coupez chez vous, l'accès saute chez nous." },
+    { speaker: 'B', text: "Parfait, c'est ce que je voulais entendre. Et l'intégration concrète : on est sur quelle téléphonie pour brancher la collecte des appels, et est-ce que ça remonte dans notre CRM ?" },
+    { speaker: 'A', text: "On se branche par API sur votre téléphonie — Ringover, Aircall — sans rien installer sur les postes. Et chaque analyse remonte dans la fiche du contact côté CRM, donc vos équipes ne changent pas d'outil au quotidien. Vous êtes sur quoi côté CRM et téléphonie ?" },
+    { speaker: 'B', text: "Ringover pour la téléphonie, et HubSpot pour le CRM. Si ça se branche proprement sur les deux, je n'ai pas d'objection technique." },
+    { speaker: 'A', text: "Les deux sont des intégrations standard chez nous, donc oui, branchement propre. Est-ce qu'il vous reste un point bloquant côté sécurité avant que je le remonte à Thomas pour le contrat ?" },
+    { speaker: 'B', text: "Non, pour moi c'est bon sur le plan technique. Hébergement Europe, audio supprimé, SSO, intégration Ringover et HubSpot : je donne mon feu vert. Le budget c'est Thomas qui tranche, mais de mon côté il n'y a pas de blocage." },
+    { speaker: 'A', text: "Excellent, merci Karim. Je transmets votre validation technique à Thomas et je m'assure que la clause d'hébergement Europe figure noir sur blanc dans le contrat. Je reste dispo si une question de sécurité ressurgit côté équipe." },
+    { speaker: 'B', text: "Très bien, merci à vous, bonne journée." },
+  ],
+})
+
+// Appel supplémentaire (démo Dev/test) — MÊME deal Acme. Reprend le fil de
+// Thomas Vidal (DAF, mock-16) pour la signature finale : closing positif daté.
+// Boucle la trajectoire du deal (découverte → ROI → validation technique →
+// signature). Même callee_number que mock-16 → même contact côté matching.
+const DEMO_ACME_THOMAS_CLOSE: MockTranscript = buildScenario({
+  id: 'mock-20',
+  title: 'Démo 08/06 · Acme Corp — Thomas Vidal (signature finale)',
+  description: 'Deal Acme · DAF · clause hébergement Europe actée · budget validé · signature du contrat · kickoff planifié.',
+  caller_number: DEMO_CALLER,
+  callee_number: '+33180000202',
+  contact_name: 'Thomas Vidal',
+  company_name: 'Acme Corp',
+  deal_name: 'Acme Corp — Déploiement Q3',
+  deal_id: DEMO_ACME_DEAL_ID,
+  turns: [
+    { speaker: 'A', text: "Bonjour Thomas, Camille de Flowly. Merci de reprendre le temps. On a bouclé la boucle : Karim a donné son feu vert technique sur l'hébergement et la sécurité, et je vous ai renvoyé le business case chiffré. Je vous propose qu'on acte les dernières conditions pour la signature." },
+    { speaker: 'B', text: "Bonjour Camille. Oui, j'ai bien reçu le business case, et Karim m'a confirmé que c'était bon de son côté. Le ROI se tient, on est alignés. Mon dernier point c'était la clause d'hébergement des données en Europe." },
+    { speaker: 'A', text: "Elle est écrite noir sur blanc dans le contrat que je vous envoie : hébergement en Europe à Paris, audio supprimé après transcription. C'est un engagement contractuel, pas une promesse commerciale. Ça lève votre dernière réserve ?" },
+    { speaker: 'B', text: "Oui, c'est exactement ce qu'il me fallait pour le défendre en interne. Sur ces bases, le budget est validé de mon côté. On part bien sur les quinze commerciaux ?" },
+    { speaker: 'A', text: "Quinze commerciaux sur les deux sites, oui, comme convenu avec Camille Roux. Je vous envoie le contrat aujourd'hui en signature électronique. On était parti sur une signature avant la fin du mois, le 27, c'est toujours bon pour vous ?" },
+    { speaker: 'B', text: "Le 27 c'est même mieux, je vais pouvoir le signer dès cette semaine. Envoyez, je le relis et je signe." },
+    { speaker: 'A', text: "Parfait. Dès que j'ai votre signature, je déclenche l'onboarding : on branche Ringover et HubSpot avec Karim, et vos appels sont analysés dès le lendemain. On vise un démarrage opérationnel début de semaine prochaine, ça vous convient ?" },
+    { speaker: 'B', text: "Oui, début de semaine prochaine c'est parfait. Je préviens Camille Roux et Karim qu'on est en phase de lancement." },
+    { speaker: 'A', text: "Excellent. Je vous envoie le contrat dans l'heure et je mets Camille Roux en copie. Ravi qu'on démarre ensemble, Thomas." },
+    { speaker: 'B', text: "Merci à vous Camille, beau travail sur tout le cycle. À très vite." },
+  ],
+})
+
 export const MOCK_TRANSCRIPTS: MockTranscript[] = [
   {
     id: 'mock-1',
@@ -685,4 +780,7 @@ Parfait, j'attends votre mail.`,
   DEMO_ACME_CAMILLE,
   DEMO_ACME_THOMAS,
   DEMO_LUMEN_SARAH,
+  DEMO_ACME_CAMILLE_LIVE,
+  DEMO_ACME_KARIM,
+  DEMO_ACME_THOMAS_CLOSE,
 ]
