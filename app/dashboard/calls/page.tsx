@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { PhoneCall, Play } from "lucide-react";
+import { Activity, PhoneCall, Play } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -103,7 +103,7 @@ export default async function CallsListPage({
   let query = supabase
     .from("calls")
     .select(
-      `id, callee_number, contact_name, company_name, deal_name, started_at, created_at, duration_seconds, status, ${analysesEmbed}`,
+      `id, callee_number, contact_name, company_name, deal_name, deal_id, started_at, created_at, duration_seconds, status, ${analysesEmbed}`,
       { count: "exact" },
     )
     .eq("organization_id", orgFilter)
@@ -137,6 +137,23 @@ export default async function CallsListPage({
   const liveSignature = buildSignature(inProgressRows);
   const liveActive = inProgressRows.length > 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  // Regroupement « deal » (J23) : on compte les appels par prospect pour ne
+  // proposer le lien vers la trajectoire que quand il y a ≥ 2 appels. Clé =
+  // deal_id HubSpot si présent, sinon le numéro appelé (cas des appels simulés).
+  const { data: groupRows } = await supabase
+    .from("calls")
+    .select("callee_number, deal_id")
+    .eq("organization_id", orgFilter);
+  const groupCount = new Map<string, number>();
+  for (const row of groupRows ?? []) {
+    const key = row.deal_id
+      ? `deal:${row.deal_id}`
+      : row.callee_number
+        ? `phone:${row.callee_number}`
+        : null;
+    if (key) groupCount.set(key, (groupCount.get(key) ?? 0) + 1);
+  }
 
   // Construit l'URL d'une autre page en conservant les filtres actifs.
   function buildPageHref(targetPage: number) {
@@ -228,11 +245,22 @@ export default async function CallsListPage({
                   const dateRef = call.started_at ?? call.created_at;
                   const status = call.status as string;
 
+                  // Clé de regroupement deal (même logique que groupCount).
+                  const groupKey = call.deal_id
+                    ? `deal:${call.deal_id}`
+                    : call.callee_number
+                      ? `phone:${call.callee_number}`
+                      : null;
+                  const groupTotal = groupKey
+                    ? (groupCount.get(groupKey) ?? 0)
+                    : 0;
+                  const hasTrajectory = Boolean(groupKey) && groupTotal >= 2;
+
                   return (
-                    <li key={call.id}>
+                    <li key={call.id} className="flex items-stretch">
                       <Link
                         href={`/dashboard/calls/${call.id}`}
-                        className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/50"
+                        className="grid flex-1 grid-cols-[1fr_auto_auto_auto] items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/50"
                       >
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">
@@ -268,6 +296,18 @@ export default async function CallsListPage({
                         </span>
                         <CallStatusBadge status={status} />
                       </Link>
+                      {/* Lien vers la trajectoire du deal (sibling, pas imbriqué)
+                          — affiché uniquement si le prospect a ≥ 2 appels. */}
+                      {hasTrajectory && groupKey ? (
+                        <Link
+                          href={`/dashboard/deals/${encodeURIComponent(groupKey)}`}
+                          className="flex items-center gap-1 border-l border-border px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                          title="Voir la trajectoire de ce deal"
+                        >
+                          <Activity className="size-3.5" />
+                          <span className="hidden sm:inline">{groupTotal} appels</span>
+                        </Link>
+                      ) : null}
                     </li>
                   );
                 })}

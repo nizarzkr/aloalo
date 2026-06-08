@@ -368,6 +368,80 @@ const HELIA_SOPHIE: MockTranscript = buildScenario({
   ],
 })
 
+// ---------------------------------------------------------------------------
+// Trajectoire « deal qui décroche sur 3 appels » (J23)
+// Prospect : Pauline Garnier, COO de Helios Studio. MÊME callee_number sur les
+// 3 appels → ils se regroupent en un seul deal côté /dashboard/deals.
+// L'engagement décline d'un appel à l'autre (c'est le but) :
+//   1/3 chaud   : le prospect pose des questions d'implémentation, propose une
+//                 date lui-même (next step ferme), signaux d'achat clairs.
+//   2/3 tiède   : réponses plus courtes, « envoyez-moi des infos » (next step mou).
+//   3/3 froid   : prospect quasi muet, objection « fausse » (désengagement poli),
+//                 aucun next step.
+// ⚠️ À simuler DANS L'ORDRE 1 → 2 → 3 pour que created_at soit croissant (le
+// simulateur n'horodate pas dans le passé).
+// ---------------------------------------------------------------------------
+const HELIOS_CALLER = '+33600110011'
+const HELIOS_CALLEE = '+33170000123'
+
+const HELIOS_DECLINE_1: MockTranscript = buildScenario({
+  id: 'mock-12',
+  title: 'Helios · Décrochage 1/3 — découverte chaleureuse',
+  description: 'Trajectoire deal (1/3) · prospect engagé · questions d\'implémentation · next step ferme proposé par le prospect.',
+  caller_number: HELIOS_CALLER,
+  callee_number: HELIOS_CALLEE,
+  turns: [
+    { speaker: 'A', text: "Bonjour Pauline, Camille de Flowly. Merci d'avoir bloqué ce créneau. Avant de vous montrer quoi que ce soit, j'aimerais comprendre comment vous pilotez vos équipes aujourd'hui. Vous êtes combien chez Helios Studio ?" },
+    { speaker: 'B', text: "Bonjour Camille. On est une trentaine, dont une équipe commerciale de huit personnes. C'est justement là que ça coince : je n'ai aucune visibilité sur la qualité de leurs appels, et on recrute deux juniors le mois prochain." },
+    { speaker: 'A', text: "Je comprends. Et concrètement, qu'est-ce qui vous ferait dire dans trois mois que vous avez réglé le problème ?" },
+    { speaker: 'B', text: "Si je pouvais voir en un coup d'œil quels commerciaux décrochent et sur quoi, sans devoir réécouter des heures d'appels. Aujourd'hui je fais ça au feeling et c'est intenable. Comment ça se passe concrètement le déploiement chez vous ? C'est long à mettre en place ?" },
+    { speaker: 'A', text: "Très bonne question. On se branche sur votre téléphonie, et dès le lendemain vos appels sont analysés automatiquement. Aucune installation côté commerciaux." },
+    { speaker: 'B', text: "D'accord, et ça s'intègre avec notre CRM ? Parce que mes commerciaux vivent dedans, s'il faut qu'ils aillent ailleurs ils ne le feront pas." },
+    { speaker: 'A', text: "Oui, tout remonte dans la fiche du contact. Vos commerciaux ne changent rien à leurs habitudes." },
+    { speaker: 'B', text: "C'est exactement ce qu'il me faut. Écoutez, je veux avancer. On peut se caler une démo avec mon responsable commercial mardi prochain à 14h ? Je le préviens dès aujourd'hui." },
+    { speaker: 'A', text: "Parfait, je bloque mardi 14h et je vous envoie l'invitation. Merci Pauline, à mardi." },
+    { speaker: 'B', text: "Très bien, à mardi, j'ai hâte." },
+  ],
+})
+
+const HELIOS_DECLINE_2: MockTranscript = buildScenario({
+  id: 'mock-13',
+  title: 'Helios · Décrochage 2/3 — refroidissement',
+  description: 'Trajectoire deal (2/3) · réponses plus courtes · moins de questions · next step mou (« envoyez-moi des infos »).',
+  caller_number: HELIOS_CALLER,
+  callee_number: HELIOS_CALLEE,
+  turns: [
+    { speaker: 'A', text: "Bonjour Pauline, Camille de Flowly, comme convenu après la démo de mardi. Vous avez pu en discuter avec votre responsable commercial ?" },
+    { speaker: 'B', text: "Bonjour. Oui, vite fait. C'était bien dans l'ensemble." },
+    { speaker: 'A', text: "Content que ça vous ait plu. Qu'est-ce qui vous a le plus parlé de votre côté ?" },
+    { speaker: 'B', text: "Le scoring des appels, je pense. Après il faut voir." },
+    { speaker: 'A', text: "Bien sûr. Sur le déploiement et l'intégration au CRM, vous aviez des points à clarifier ?" },
+    { speaker: 'B', text: "Non, ça avait l'air clair." },
+    { speaker: 'A', text: "Parfait. Pour avancer, je vous propose qu'on cale un point de décision la semaine prochaine avec les chiffres pour votre équipe. Jeudi à 11h ?" },
+    { speaker: 'B', text: "Écoutez, là c'est compliqué de m'engager sur une date. Envoyez-moi plutôt un récapitulatif par mail avec les tarifs, je regarderai ça au calme." },
+    { speaker: 'A', text: "Pas de souci, je vous prépare ça aujourd'hui. Je me permettrai de revenir vers vous en fin de semaine prochaine pour avoir votre retour." },
+    { speaker: 'B', text: "Oui, voilà, c'est ça. Merci." },
+  ],
+})
+
+const HELIOS_DECLINE_3: MockTranscript = buildScenario({
+  id: 'mock-14',
+  title: 'Helios · Décrochage 3/3 — prospect qui ghoste',
+  description: 'Trajectoire deal (3/3) · prospect quasi muet · objection « fausse » (désengagement poli) · aucun next step.',
+  caller_number: HELIOS_CALLER,
+  callee_number: HELIOS_CALLEE,
+  turns: [
+    { speaker: 'A', text: "Bonjour Pauline, c'est Camille de Flowly. Je me permets de revenir vers vous suite au récapitulatif que je vous ai envoyé la semaine dernière. Vous avez pu y jeter un œil ?" },
+    { speaker: 'B', text: "Ah oui, bonjour. Euh, rapidement, oui." },
+    { speaker: 'A', text: "Super. Est-ce que les tarifs correspondaient à ce que vous aviez en tête, et est-ce qu'il y a des points sur lesquels je peux vous aider à avancer en interne ?" },
+    { speaker: 'B', text: "Honnêtement il faut que j'en rediscute avec la direction, là on a d'autres priorités en ce moment." },
+    { speaker: 'A', text: "Je comprends tout à fait. Souvent dans ces cas-là, ce qui aide c'est de chiffrer le coût de ne rien faire — sur vos deux recrutements à venir notamment. Est-ce qu'on prend vingt minutes pour le poser ensemble ?" },
+    { speaker: 'B', text: "C'est gentil mais ce n'est pas le bon moment. Je reviens vers vous." },
+    { speaker: 'A', text: "Bien sûr. Pour que je ne vous relance pas dans le vide, vous voyez ça plutôt à quelle échéance ?" },
+    { speaker: 'B', text: "Je ne sais pas trop, je vous recontacte. Merci, bonne journée." },
+  ],
+})
+
 export const MOCK_TRANSCRIPTS: MockTranscript[] = [
   {
     id: 'mock-1',
@@ -501,4 +575,7 @@ Parfait, j'attends votre mail.`,
   VINEA_NADIA,
   ATELIER_MARC,
   HELIA_SOPHIE,
+  HELIOS_DECLINE_1,
+  HELIOS_DECLINE_2,
+  HELIOS_DECLINE_3,
 ]

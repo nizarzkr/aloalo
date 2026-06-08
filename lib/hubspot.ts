@@ -473,6 +473,134 @@ export async function getDealCalls(
 }
 
 // ============================================================================
+// 2quater. getContactEmailSignals — signaux off-call email d'un contact (J23).
+// ============================================================================
+// Pour le « momentum » du deal : on lit les emails loggués sur le contact côté
+// HubSpot et on en dérive deux signaux de refroidissement :
+//   - velocity_hours : délai entre le 1er email SORTANT (commercial) et la 1re
+//     réponse ENTRANTE (prospect). Un délai qui s'allonge = prospect qui refroidit.
+//   - multi_threading : nb d'adresses distinctes côté prospect (to + cc), indice
+//     d'un décideur/DAF mis en copie (engagement plus fort).
+//
+// Vérifié le 8 juin 2026 : l'objet EMAIL et ces propriétés sont lisibles avec une
+// Private App en tier gratuit — PAS besoin de Sales Hub Pro. En revanche
+// `hs_email_open_count` / `hs_email_click_count` existent au schéma mais ne sont
+// alimentés que si le tracking email est actif → on les lit « si dispo » et on
+// renvoie null sinon (cf. mémoire project_hubspot_email_tier_j23).
+//
+// 2 requêtes (association v4 contacts→emails, puis batch read). Tout est dégradé
+// vers null : pas d'email loggué (cas des données simulées) → on renvoie null,
+// jamais d'erreur. @returns DealCrmSignals ou null.
+export type DealCrmEmailSignals = {
+  velocity_hours: number | null
+  multi_threading: number | null
+  total_opens: number | null
+  total_clicks: number | null
+};
+
+const CONTACT_EMAILS_LIMIT = 100;
+
+export async function getContactEmailSignals(
+  contactId: string,
+  token: string,
+): Promise<DealCrmEmailSignals | null> {
+  if (!contactId || !token) return null;
+
+  // 1. IDs des emails associés au contact.
+  const assocRes = await hubspotFetch(
+    `/crm/v4/objects/contacts/${encodeURIComponent(contactId)}/associations/emails?limit=${CONTACT_EMAILS_LIMIT}`,
+    token,
+  );
+  if (!assocRes || !assocRes.ok) return null;
+
+  let emailIds: string[] = [];
+  try {
+    const data = (await assocRes.json()) as {
+      results?: Array<{ toObjectId?: string | number }>;
+    };
+    emailIds = (data.results ?? [])
+      .map((r) => (r.toObjectId != null ? String(r.toObjectId) : ""))
+      .filter((id) => id.length > 0);
+  } catch {
+    return null;
+  }
+  if (emailIds.length === 0) return null;
+
+  // 2. Batch read des emails avec les propriétés confirmées (tier gratuit).
+  const readRes = await hubspotFetch("/crm/v3/objects/emails/batch/read", token, {
+    method: "POST",
+    body: {
+      properties: [
+        "hs_timestamp",
+        "hs_email_direction",
+        "hs_email_to_email",
+        "hs_email_cc_email",
+        "hs_email_open_count",
+        "hs_email_click_count",
+      ],
+      inputs: emailIds.map((id) => ({ id })),
+    },
+  });
+  if (!readRes || !readRes.ok) return null;
+
+  try {
+    const data = (await readRes.json()) as {
+      results?: Array<{ properties?: Record<string, string | null> }>;
+    };
+    const emails = (data.results ?? []).map((r) => r.properties ?? {});
+    if (emails.length === 0) return null;
+
+    // Tri chronologique pour calculer la velocity sortant → 1re réponse.
+    const dated = emails
+      .map((p) => ({
+        ts: p.hs_timestamp ? Date.parse(p.hs_timestamp) : NaN,
+        // Direction HubSpot : EMAIL (sortant, envoyé par le commercial) vs
+        // INCOMING_EMAIL (réponse du prospect).
+        incoming: (p.hs_email_direction ?? "").toUpperCase().includes("INCOMING"),
+        recipients: [p.hs_email_to_email, p.hs_email_cc_email]
+          .filter((v): v is string => Boolean(v))
+          .flatMap((v) => v.split(";"))
+          .map((v) => v.trim().toLowerCase())
+          .filter(Boolean),
+        opens: Number(p.hs_email_open_count ?? ""),
+        clicks: Number(p.hs_email_click_count ?? ""),
+      }))
+      .filter((e) => Number.isFinite(e.ts))
+      .sort((a, b) => a.ts - b.ts);
+
+    // velocity : 1er sortant → 1re réponse entrante qui suit.
+    let velocityHours: number | null = null;
+    const firstOutbound = dated.find((e) => !e.incoming);
+    if (firstOutbound) {
+      const firstReply = dated.find((e) => e.incoming && e.ts > firstOutbound.ts);
+      if (firstReply) {
+        velocityHours = (firstReply.ts - firstOutbound.ts) / 3_600_000;
+      }
+    }
+
+    // multi_threading : nb d'adresses distinctes touchées (hors null).
+    const distinct = new Set<string>();
+    for (const e of dated) for (const r of e.recipients) distinct.add(r);
+    const multiThreading = distinct.size > 0 ? distinct.size : null;
+
+    // Ouvertures / clics : somme « si dispo » (NaN = champ vide/non tracké → null).
+    const sumOpens = dated.reduce((s, e) => s + (Number.isFinite(e.opens) ? e.opens : 0), 0);
+    const sumClicks = dated.reduce((s, e) => s + (Number.isFinite(e.clicks) ? e.clicks : 0), 0);
+    const anyOpens = dated.some((e) => Number.isFinite(e.opens));
+    const anyClicks = dated.some((e) => Number.isFinite(e.clicks));
+
+    return {
+      velocity_hours: velocityHours,
+      multi_threading: multiThreading,
+      total_opens: anyOpens ? sumOpens : null,
+      total_clicks: anyClicks ? sumClicks : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
 // 2bis. getContact — récupère un contact par son ID (J16, pour la CRM Card).
 // ============================================================================
 // À l'ouverture d'une fiche contact, HubSpot nous transmet l'ID du contact.
