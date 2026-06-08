@@ -80,6 +80,12 @@ export async function POST(req: NextRequest) {
         segments: transcript.segments,
         mock_id: transcript.id,
         title: transcript.title,
+        // Identité CRM pré-câblée (démo / scénarios multi-contacts) — persistée
+        // telle quelle sur l'appel par le webhook (cf. SimTranscriptSchema passthrough).
+        contact_name: transcript.contact_name ?? null,
+        company_name: transcript.company_name ?? null,
+        deal_name: transcript.deal_name ?? null,
+        deal_id: transcript.deal_id ?? null,
       }
     }
   }

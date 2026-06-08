@@ -95,6 +95,19 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SECRET_KEY!
   )
 
+  // Identité CRM pré-câblée par le simulateur (démo / multi-contacts) : on la
+  // persiste telle quelle. Un `deal_id` commun regroupe plusieurs appels (et
+  // contacts) en un seul deal sur /dashboard/deals. Null en appel réel : c'est
+  // l'enrichissement HubSpot qui remplira ces colonnes plus tard.
+  const simIdentity = simTranscriptRaw
+    ? {
+        contact_name: (simTranscriptRaw.contact_name as string | null) ?? null,
+        company_name: (simTranscriptRaw.company_name as string | null) ?? null,
+        deal_name: (simTranscriptRaw.deal_name as string | null) ?? null,
+        deal_id: (simTranscriptRaw.deal_id as string | null) ?? null,
+      }
+    : null
+
   const { data: insertedCall, error } = await supabase
     .from('calls')
     .insert({
@@ -106,6 +119,10 @@ export async function POST(req: NextRequest) {
       audio_url: (call.recording_url as string) ?? null,
       status: 'pending',
       started_at: call.started_at as string,
+      ...(simIdentity?.contact_name ? { contact_name: simIdentity.contact_name } : {}),
+      ...(simIdentity?.company_name ? { company_name: simIdentity.company_name } : {}),
+      ...(simIdentity?.deal_name ? { deal_name: simIdentity.deal_name } : {}),
+      ...(simIdentity?.deal_id ? { deal_id: simIdentity.deal_id } : {}),
     })
     .select('id')
     .single()

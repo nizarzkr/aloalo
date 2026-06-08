@@ -14,6 +14,14 @@ export type MockTranscript = {
     start: number
     end: number
   }>
+  // Identité CRM optionnelle (J24bis / démo) : normalement remplie par
+  // l'enrichissement HubSpot, on peut la pré-câbler ici pour les scénarios de
+  // démo. Un `deal_id` commun à plusieurs appels les regroupe en UN seul deal
+  // (même si les contacts / numéros diffèrent) sur /dashboard/deals.
+  contact_name?: string
+  company_name?: string
+  deal_name?: string
+  deal_id?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -32,6 +40,11 @@ function buildScenario(opts: {
   caller_number: string
   callee_number: string
   turns: Array<{ speaker: 'A' | 'B'; text: string }>
+  // Identité CRM optionnelle (cf. MockTranscript) pré-câblée pour les démos.
+  contact_name?: string
+  company_name?: string
+  deal_name?: string
+  deal_id?: string
 }): MockTranscript {
   const CHARS_PER_SEC = 10
   const GAP_MS = 800
@@ -54,6 +67,10 @@ function buildScenario(opts: {
     duration_seconds: Math.round(lastEnd / 1000),
     text,
     segments,
+    contact_name: opts.contact_name,
+    company_name: opts.company_name,
+    deal_name: opts.deal_name,
+    deal_id: opts.deal_id,
   }
 }
 
@@ -442,6 +459,93 @@ const HELIOS_DECLINE_3: MockTranscript = buildScenario({
   ],
 })
 
+// ---------------------------------------------------------------------------
+// DÉMO 08/06 — 3 appels, 3 contacts, 2 deals (croisement des infos)
+// ---------------------------------------------------------------------------
+// Deal A « Acme Corp » (deal_id partagé) : DEUX contacts → un seul deal sur
+// /dashboard/deals (multi-threading : un champion + le décideur financier).
+//   - mock-15 : Camille Roux (Head of Sales, championne)
+//   - mock-16 : Thomas Vidal (DAF, décideur) — MÊME deal_id que mock-15
+// Deal B « Lumen Studio » : un contact, un autre deal.
+//   - mock-17 : Sarah Benali (fondatrice)
+// À jouer en live ; les titres commencent par « Démo 08/06 ».
+// ---------------------------------------------------------------------------
+const DEMO_CALLER = '+33600220022'
+const DEMO_ACME_DEAL_ID = 'demo-acme-0806'
+const DEMO_LUMEN_DEAL_ID = 'demo-lumen-0806'
+
+const DEMO_ACME_CAMILLE: MockTranscript = buildScenario({
+  id: 'mock-15',
+  title: 'Démo 08/06 · Acme Corp — Camille Roux (championne)',
+  description: 'Deal Acme (1/2) · Head of Sales · découverte engagée · propose une démo avec le DAF.',
+  caller_number: DEMO_CALLER,
+  callee_number: '+33180000201',
+  contact_name: 'Camille Roux',
+  company_name: 'Acme Corp',
+  deal_name: 'Acme Corp — Déploiement Q3',
+  deal_id: DEMO_ACME_DEAL_ID,
+  turns: [
+    { speaker: 'A', text: "Bonjour Camille, Camille de Flowly également ! Merci pour le créneau. Avant de vous montrer l'outil, j'aimerais comprendre comment votre équipe commerciale fonctionne aujourd'hui chez Acme. Vous êtes combien ?" },
+    { speaker: 'B', text: "Bonjour ! Oui avec plaisir. On est quinze commerciaux répartis sur deux sites. Mon vrai sujet, c'est que je n'ai aucune visibilité homogène sur la qualité des appels d'une équipe à l'autre." },
+    { speaker: 'A', text: "Et qu'est-ce qui vous ferait dire dans trois mois que c'est réglé ?" },
+    { speaker: 'B', text: "Pouvoir comparer objectivement les deux sites et repérer qui a besoin de coaching, sans réécouter des heures. Aujourd'hui je le fais au feeling, et ça crée des tensions managériales." },
+    { speaker: 'A', text: "Très clair. L'outil analyse 100 % des appels automatiquement et remonte les signaux par commercial et par équipe. Concrètement vous verriez le différentiel entre vos deux sites dès la première semaine." },
+    { speaker: 'B', text: "Ça c'est exactement ce qu'il me faut. Par contre la décision budget ne passe pas que par moi, il faut que notre DAF, Thomas Vidal, valide. Comment on fait ?" },
+    { speaker: 'A', text: "Parfait, c'est même mieux de l'embarquer tôt. Je vous propose une démo à trois la semaine prochaine, je prépare un mini-business case chiffré pour lui. Vous avez une dispo mardi ou jeudi ?" },
+    { speaker: 'B', text: "Jeudi 11h ça marche. Je préviens Thomas et je vous mets en copie tous les deux." },
+    { speaker: 'A', text: "Excellent, je bloque jeudi 11h et je vous envoie l'invitation avec le business case. Merci Camille !" },
+    { speaker: 'B', text: "Merci à vous, à jeudi." },
+  ],
+})
+
+const DEMO_ACME_THOMAS: MockTranscript = buildScenario({
+  id: 'mock-16',
+  title: 'Démo 08/06 · Acme Corp — Thomas Vidal (DAF, même deal)',
+  description: 'Deal Acme (2/2) · décideur financier · creuse le ROI · valide le budget, propose une date de signature.',
+  caller_number: DEMO_CALLER,
+  callee_number: '+33180000202',
+  contact_name: 'Thomas Vidal',
+  company_name: 'Acme Corp',
+  deal_name: 'Acme Corp — Déploiement Q3',
+  deal_id: DEMO_ACME_DEAL_ID,
+  turns: [
+    { speaker: 'A', text: "Bonjour Thomas, merci de prendre le temps après la démo de jeudi. Camille m'a dit que vous vouliez creuser le retour sur investissement, c'est exactement ce que je veux qu'on regarde ensemble." },
+    { speaker: 'B', text: "Bonjour. Oui, la démo était convaincante côté usage. Moi ce qui m'intéresse c'est le chiffre : qu'est-ce que ça nous rapporte concrètement ?" },
+    { speaker: 'A', text: "Sur vos quinze commerciaux, en réduisant ne serait-ce que de 10 % les cycles de vente grâce au coaching ciblé, on est sur plusieurs dizaines de milliers d'euros par trimestre. Vous estimez votre cycle moyen à combien aujourd'hui ?" },
+    { speaker: 'B', text: "Autour de soixante jours. Si on gagne dix jours dessus de façon fiable, le calcul est vite vu, c'est rentable dès le premier trimestre." },
+    { speaker: 'A', text: "C'est exactement ça. Et le coût de l'abonnement est très inférieur à ce gain. Est-ce qu'il reste un point qui vous bloque pour avancer ?" },
+    { speaker: 'B', text: "Non, le budget est validable de mon côté. Il me faut juste le contrat avec un engagement clair sur l'hébergement des données en Europe." },
+    { speaker: 'A', text: "Tout est hébergé en Europe, je vous mets la clause noir sur blanc dans le contrat. On vise une signature pour quelle date ?" },
+    { speaker: 'B', text: "Envoyez-moi le contrat cette semaine, je le signe avant la fin du mois. Disons le 27." },
+    { speaker: 'A', text: "Parfait, je vous envoie le contrat aujourd'hui et je note la signature au 27. Merci Thomas, ravi qu'on avance ensemble." },
+    { speaker: 'B', text: "Merci à vous, bonne journée." },
+  ],
+})
+
+const DEMO_LUMEN_SARAH: MockTranscript = buildScenario({
+  id: 'mock-17',
+  title: 'Démo 08/06 · Lumen Studio — Sarah Benali (autre deal)',
+  description: 'Deal Lumen · fondatrice · petite équipe · découverte + essai gratuit lancé.',
+  caller_number: DEMO_CALLER,
+  callee_number: '+33180000203',
+  contact_name: 'Sarah Benali',
+  company_name: 'Lumen Studio',
+  deal_name: 'Lumen Studio — Pilote',
+  deal_id: DEMO_LUMEN_DEAL_ID,
+  turns: [
+    { speaker: 'A', text: "Bonjour Sarah, Camille de Flowly. Vous m'aviez contactée via le site, vous cherchez à structurer vos appels commerciaux chez Lumen Studio, c'est ça ?" },
+    { speaker: 'B', text: "Bonjour, oui exactement. On est une petite équipe de quatre, on grandit vite et je veux poser de bonnes bases avant de recruter." },
+    { speaker: 'A', text: "Très sain comme réflexe. Aujourd'hui, comment vous formez les nouveaux sur la partie appel ?" },
+    { speaker: 'B', text: "Honnêtement, sur le tas. C'est moi qui montre, mais je n'ai pas le temps de tout suivre. J'aimerais un outil qui objective ce qui marche dans nos appels." },
+    { speaker: 'A', text: "C'est pile l'usage. L'outil analyse chaque appel et fait ressortir les bonnes pratiques de votre meilleur closer pour que les nouveaux s'en inspirent. Vous voulez tester sur vos vrais appels ?" },
+    { speaker: 'B', text: "Oui carrément. C'est quoi les conditions pour essayer ?" },
+    { speaker: 'A', text: "Essai gratuit quatorze jours, sans engagement, je vous envoie le lien d'inscription tout de suite. On fait un point jeudi prochain pour regarder vos premiers résultats ensemble ?" },
+    { speaker: 'B', text: "Parfait, j'attends le lien et on dit jeudi prochain." },
+    { speaker: 'A', text: "Top, lien envoyé dans la foulée. Merci Sarah, à jeudi !" },
+    { speaker: 'B', text: "Merci, à jeudi." },
+  ],
+})
+
 export const MOCK_TRANSCRIPTS: MockTranscript[] = [
   {
     id: 'mock-1',
@@ -578,4 +682,7 @@ Parfait, j'attends votre mail.`,
   HELIOS_DECLINE_1,
   HELIOS_DECLINE_2,
   HELIOS_DECLINE_3,
+  DEMO_ACME_CAMILLE,
+  DEMO_ACME_THOMAS,
+  DEMO_LUMEN_SARAH,
 ]

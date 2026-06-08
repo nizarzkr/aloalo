@@ -128,6 +128,14 @@ export default async function DealMomentumPage({
   const hubspotContactId =
     calls.find((c) => c.hubspot_contact_id)?.hubspot_contact_id ?? null;
 
+  // Contacts distincts du deal (un deal peut croiser plusieurs interlocuteurs :
+  // champion + décideur). Sert à visualiser le multi-threading.
+  const distinctContacts = [
+    ...new Set(
+      calls.map((c) => c.contact_name).filter((n): n is string => Boolean(n)),
+    ),
+  ];
+
   // Points de trajectoire (déjà triés chronologiquement par la requête).
   const points: DealCallPoint[] = calls.map((c) => {
     const a = pickAnalysis(c.analyses);
@@ -181,13 +189,21 @@ export default async function DealMomentumPage({
           Trajectoire du deal
         </p>
         <h1 className="mt-1 font-heading text-3xl font-bold tracking-tight text-foreground">
-          {contactName ?? phone}
+          {dealName ?? contactName ?? companyName ?? phone}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {[companyName, dealName].filter(Boolean).join(" · ") || phone}
+          {[companyName].filter(Boolean).join(" · ") || phone}
           {" · "}
           {calls.length} appel{calls.length > 1 ? "s" : ""}
         </p>
+        {distinctContacts.length > 1 ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">
+              Contacts impliqués :
+            </span>{" "}
+            {distinctContacts.join(", ")}
+          </p>
+        ) : null}
       </header>
 
       {/* Bandeau trajectoire : tendance + raisons en clair */}
@@ -320,9 +336,10 @@ export default async function DealMomentumPage({
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">
-                        {dateFmt(p.date)}
+                        {call?.contact_name ?? dateFmt(p.date)}
                       </p>
                       <p className="text-xs text-muted-foreground">
+                        {call?.contact_name ? `${dateFmt(p.date)} · ` : ""}
                         {p.buying_signals != null
                           ? `${p.buying_signals} signal${p.buying_signals > 1 ? "aux" : ""} d'achat`
                           : "—"}
