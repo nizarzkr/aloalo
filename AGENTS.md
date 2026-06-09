@@ -116,3 +116,17 @@ Helper RLS : `public.user_organization_id()` (SECURITY DEFINER) — renvoie l'or
 3. **Toujours préférer** `Edit` sur des fichiers existants plutôt que créer des doublons.
 4. **Commenter en français** les décisions non-évidentes.
 5. **Ne jamais committer `.env.local`** ni n'importe quel secret.
+
+---
+
+## Commande « ship la prochaine issue »
+
+Quand Nizar dit **« ship la prochaine issue »** (ou une formulation équivalente, sans donner de numéro), appliquer cette procédure exacte :
+
+1. **Identifier l'issue.** Ouvrir `ISSUES_TRACKER.md` à la racine et prendre la **première case non cochée** (`- [ ]`) dans l'ordre du fichier — c'est l'issue à traiter. Confirmer le numéro à Nizar en une ligne. Ne jamais sauter de ligne ni changer l'ordre.
+2. **Lire l'issue** sur GitHub avec `gh issue view <N>` pour avoir le détail complet (fichiers, fix, critères d'acceptation).
+3. **Mode plan.** Proposer un plan à Nizar et le débriefer avec lui. Ne rien modifier tant qu'il n'a pas validé le plan.
+4. **Exécuter** une fois le plan validé : coder, tester.
+5. **Commit directement sur `main`** (workflow choisi par Nizar : pas de Pull Request). Message de commit en français, terminé par la ligne `Co-Authored-By`. Référencer l'issue dans le message (ex. `Closes #N`).
+6. **Avant de terminer**, cocher la case correspondante dans `ISSUES_TRACKER.md` (`- [ ]` → `- [x]`), mettre à jour le compteur de progression et le pointeur « prochaine issue » en bas du fichier, puis cocher la case dans l'EPIC **#35** sur GitHub (`gh issue edit`/`gh api`) et, si pertinent, fermer l'issue (`gh issue close <N>`).
+7. **Une seule issue par session.** Ne pas enchaîner sur la suivante automatiquement.
