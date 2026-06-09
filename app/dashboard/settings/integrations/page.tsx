@@ -4,7 +4,9 @@
 
 import { redirect } from "next/navigation";
 import { Cable } from "lucide-react";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 
+import { hasSecret } from "@/lib/crypto/org-secrets";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { HubspotSettingsForm } from "@/components/dashboard/hubspot-settings-form";
 import { RingoverKeyForm } from "@/components/dashboard/ringover-key-form";
@@ -28,22 +30,35 @@ export default async function IntegrationsSettingsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: profile }, { data: org }] = await Promise.all([
-    supabase.from("profiles").select("role").eq("id", user.id).single(),
-    supabase
-      .from("organizations")
-      .select("ringover_api_key, hubspot_token, hubspot_portal_id")
-      .maybeSingle(),
-  ]);
+  // Lecture via le client admin (clé secrète, bypass RLS) : depuis l'issue #5,
+  // les colonnes ringover_api_key / hubspot_token / hubspot_portal_id ne sont
+  // PLUS lisibles par le client RLS (navigateur). On ne dérive QUE des booléens
+  // de présence + le portal id, jamais une valeur secrète.
+  const admin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SECRET_KEY!,
+    { auth: { persistSession: false } },
+  );
+
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("organization_id, role")
+    .eq("id", user.id)
+    .single();
+
+  const { data: org } = profile?.organization_id
+    ? await admin
+        .from("organizations")
+        .select("ringover_api_key, hubspot_token, hubspot_portal_id")
+        .eq("id", profile.organization_id)
+        .maybeSingle()
+    : { data: null };
 
   const isOwner = profile?.role === "owner";
-  // On ne lit que la PRÉSENCE des secrets, jamais leur valeur (cf. RLS / serveur).
-  const hasRingoverKey = Boolean(
-    org?.ringover_api_key && org.ringover_api_key.length > 0,
-  );
-  const hasHubspotToken = Boolean(
-    org?.hubspot_token && org.hubspot_token.length > 0,
-  );
+  // On ne lit que la PRÉSENCE des secrets (chiffrés OU legacy clair), jamais
+  // leur valeur — et on ne déchiffre rien ici.
+  const hasRingoverKey = hasSecret(org?.ringover_api_key);
+  const hasHubspotToken = hasSecret(org?.hubspot_token);
   const hubspotPortalId = org?.hubspot_portal_id ?? "";
 
   // URL du webhook Ringover — basée sur NEXT_PUBLIC_APP_URL (prod/preview).

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import * as Sentry from '@sentry/nextjs'
 import { getRingoverCallRecording } from '@/lib/ringover'
+import { decryptSecret } from '@/lib/crypto/org-secrets'
 import {
   webhookLimiter,
   checkRateLimit,
@@ -158,7 +159,8 @@ export async function POST(req: NextRequest) {
       .eq('id', organizationId)
       .single()
 
-    const apiKey = org?.ringover_api_key as string | null | undefined
+    // Clé stockée chiffrée au repos (issue #5) → déchiffrement avant usage.
+    const apiKey = decryptSecret((org?.ringover_api_key as string | null) ?? null)
     if (apiKey) {
       resolvedAudioUrl = await getRingoverCallRecording(call.id as string, apiKey)
       if (resolvedAudioUrl) {

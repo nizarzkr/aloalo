@@ -29,6 +29,7 @@ import type { CallAnalysis } from '@/lib/claude'
 import { createNote, createTask } from '@/lib/hubspot'
 import type { HubspotTarget } from '@/lib/hubspot'
 import { enrichCallFromHubspot } from '@/lib/hubspot-sync'
+import { decryptSecret } from '@/lib/crypto/org-secrets'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { computeConversationMetrics } from '@/lib/metrics/conversation'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
@@ -322,7 +323,8 @@ export async function POST(req: NextRequest) {
   //    dégradé, le pipeline d'analyse reste OK quoi qu'il arrive.
   const contactName = (call.contact_name as string | null) ?? null
   const phone = (call.callee_number as string | null) ?? null
-  const hubspotToken = (org?.hubspot_token as string | null) ?? null
+  // Token stocké chiffré au repos (issue #5) → déchiffrement avant usage.
+  const hubspotToken = decryptSecret((org?.hubspot_token as string | null) ?? null)
 
   after(async () => {
     // Forme du jsonb : cf. migrations 0010 / 0011.

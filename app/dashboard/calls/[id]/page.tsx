@@ -35,6 +35,7 @@ import {
   type ConversationMetrics,
 } from "@/lib/metrics/conversation";
 import type { DimensionEval, BehavioralSignals } from "@/lib/claude";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -195,7 +196,13 @@ export default async function CallDetailPage({
 
   // Portal HubSpot de l'org — sert à construire les liens vers la fiche contact
   // dans la section Synchro HubSpot (null si l'org n'a pas connecté HubSpot).
-  const { data: org } = await supabase
+  // hubspot_portal_id n'est plus lisible côté RLS (issue #5) → lecture admin.
+  const admin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SECRET_KEY!,
+    { auth: { persistSession: false } },
+  );
+  const { data: org } = await admin
     .from("organizations")
     .select("hubspot_portal_id")
     .eq("id", orgId)

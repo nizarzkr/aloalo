@@ -72,6 +72,7 @@ SENTRY_AUTH_TOKEN=sntrys_...                       # upload source maps au build
 SENTRY_ORG=aloalo                                   # slug de l'organisation Sentry
 SENTRY_PROJECT=aloalo-slug                          # slug du projet Sentry
 HUBSPOT_APP_CLIENT_SECRET=...                       # client secret de l'App Card HubSpot (UI Extension) — vérifie la signature X-HubSpot-Signature-v3 des requêtes hubspot.fetch() vers /api/hubspot/card-data. Récupérable dans les réglages d'auth de l'app HubSpot. (Remplace l'ancien HUBSPOT_CARD_SECRET, abandonné avec la fonction serverless.)
+ORG_SECRETS_ENC_KEY=base64(32 octets)               # chiffre au repos les credentials tiers (ringover_api_key, hubspot_token) via AES-256-GCM — cf. lib/crypto/org-secrets.ts (issue #5). SERVER-ONLY / Vercel-only (tous environnements). Générer avec `openssl rand -base64 32`. Si absente, toute (dé)chiffrement échoue → pipeline cassé : à régler AVANT de déployer la migration 0017.
 ```
 
 Ajouts prévus : `STRIPE_WEBHOOK_SECRET` (J9), `RINGOVER_WEBHOOK_SECRET` (J3).

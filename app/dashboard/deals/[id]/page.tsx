@@ -13,6 +13,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Activity, ArrowLeft, PhoneCall, TrendingDown, TrendingUp } from "lucide-react";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
+
+import { decryptSecret } from "@/lib/crypto/org-secrets";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -151,11 +154,19 @@ export default async function DealMomentumPage({
   // Dégrade silencieusement vers null (cas dominant sur données simulées).
   let crm: DealCrmSignals | null = null;
   if (hubspotContactId) {
-    const { data: org } = await supabase
+    // hubspot_token n'est plus lisible côté RLS (issue #5) : lecture admin
+    // (clé secrète, bypass RLS) scopée sur l'org, puis déchiffrement.
+    const admin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SECRET_KEY!,
+      { auth: { persistSession: false } },
+    );
+    const { data: org } = await admin
       .from("organizations")
       .select("hubspot_token")
+      .eq("id", orgFilter)
       .maybeSingle();
-    const token = (org?.hubspot_token as string | null) ?? null;
+    const token = decryptSecret((org?.hubspot_token as string | null) ?? null);
     if (token) {
       crm = await getContactEmailSignals(hubspotContactId, token);
     }

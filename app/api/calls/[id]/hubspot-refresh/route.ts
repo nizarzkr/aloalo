@@ -16,6 +16,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { enrichCallFromHubspot } from '@/lib/hubspot-sync'
+import { decryptSecret } from '@/lib/crypto/org-secrets'
 
 function getAdminClient() {
   return createAdminClient(
@@ -71,7 +72,8 @@ export async function POST(
     .eq('id', orgId)
     .single()
 
-  const token = (org?.hubspot_token as string | null) ?? null
+  // Token stocké chiffré au repos (issue #5) → déchiffrement avant usage.
+  const token = decryptSecret((org?.hubspot_token as string | null) ?? null)
   if (!token) {
     return NextResponse.json({ error: 'hubspot_not_connected' }, { status: 400 })
   }

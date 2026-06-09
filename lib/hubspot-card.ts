@@ -17,6 +17,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { getContact, getDealCalls } from '@/lib/hubspot'
+import { decryptSecret } from '@/lib/crypto/org-secrets'
 
 // Données affichables de la carte (dernier appel analysé du contact).
 export type CardData = {
@@ -115,7 +116,9 @@ export async function getContactCardData({
     .maybeSingle()
 
   if (!org) return { message: 'Portail non configuré dans Aloalo' }
-  if (!org.hubspot_token) {
+  // Token stocké chiffré au repos (issue #5) → déchiffrement avant usage.
+  const hubspotToken = decryptSecret(org.hubspot_token)
+  if (!hubspotToken) {
     return { message: 'Connexion HubSpot incomplète côté Aloalo' }
   }
   if (!contactId) {
@@ -123,7 +126,7 @@ export async function getContactCardData({
   }
 
   // 2. Lire le téléphone du contact côté HubSpot (phone OU mobilephone).
-  const contact = await getContact(contactId, org.hubspot_token)
+  const contact = await getContact(contactId, hubspotToken)
   const phones = [contact?.phone, contact?.mobilephone].filter(
     (p): p is string => typeof p === 'string' && p.trim().length > 0,
   )
@@ -222,7 +225,9 @@ export async function getDealCardData({
     .maybeSingle()
 
   if (!org) return { message: 'Portail non configuré dans Aloalo' }
-  if (!org.hubspot_token) {
+  // Token stocké chiffré au repos (issue #5) → déchiffrement avant usage.
+  const hubspotToken = decryptSecret(org.hubspot_token)
+  if (!hubspotToken) {
     return { message: 'Connexion HubSpot incomplète côté Aloalo' }
   }
   if (!dealId) {
@@ -230,7 +235,7 @@ export async function getDealCardData({
   }
 
   // 2. Appels que HubSpot rattache à ce deal (numéro appelé + horodatage).
-  const dealCalls = await getDealCalls(dealId, org.hubspot_token)
+  const dealCalls = await getDealCalls(dealId, hubspotToken)
   const numbers = [
     ...new Set(
       dealCalls

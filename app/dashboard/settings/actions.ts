@@ -14,6 +14,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
+import { decryptSecret, encryptSecret } from "@/lib/crypto/org-secrets";
 import { testHubspotConnection } from "@/lib/hubspot";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -169,10 +170,11 @@ export async function updateRingoverApiKey(
     };
   }
 
-  // 3. Update — on n'inclut JAMAIS la clé dans un log d'erreur structuré.
+  // 3. Update — la clé est chiffrée au repos (issue #5) ; on n'inclut JAMAIS
+  //    la valeur (claire ou chiffrée) dans un log d'erreur structuré.
   const { error: updateError } = await admin
     .from("organizations")
-    .update({ ringover_api_key: key })
+    .update({ ringover_api_key: encryptSecret(key) })
     .eq("id", profile.organization_id);
 
   if (updateError) {
@@ -323,7 +325,8 @@ export async function updateHubspotSettings(
   //    doit pas effacer un token déjà enregistré (l'owner peut ne mettre à jour
   //    que le Portal ID, ou re-tester sans retaper son token).
   const updatePayload: Record<string, string> = {};
-  if (hubspot_token) updatePayload.hubspot_token = hubspot_token;
+  // Token chiffré au repos (issue #5) ; le portal_id n'est pas un secret.
+  if (hubspot_token) updatePayload.hubspot_token = encryptSecret(hubspot_token);
   if (hubspot_portal_id) updatePayload.hubspot_portal_id = hubspot_portal_id;
 
   if (Object.keys(updatePayload).length > 0) {
@@ -354,7 +357,8 @@ export async function updateHubspotSettings(
       .select("hubspot_token")
       .eq("id", profile.organization_id)
       .single();
-    tokenToTest = org?.hubspot_token ?? null;
+    // Valeur stockée chiffrée (issue #5) → on déchiffre pour la tester.
+    tokenToTest = decryptSecret(org?.hubspot_token ?? null);
   }
 
   revalidatePath("/dashboard/settings");
