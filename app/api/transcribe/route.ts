@@ -36,6 +36,7 @@ import {
   getClientKey,
   rateLimitedResponse,
 } from '@/lib/rate-limit'
+import { verifyInternalSecret } from '@/lib/internal-auth'
 
 type SimTranscript = {
   text: string
@@ -51,11 +52,41 @@ function getAdminClient() {
   )
 }
 
+// Hôtes autorisés pour l'URL audio envoyée à AssemblyAI (garde anti-SSRF).
+// Liste CSV de suffixes d'hôte via AUDIO_URL_ALLOWED_HOSTS ; défaut = Ringover.
+// Ex : "ringover.com,cdn.ringover.com". On matche en suffixe (un suffixe
+// "ringover.com" couvre "foo.ringover.com" ET "ringover.com" exactement).
+function allowedAudioHosts(): string[] {
+  return (process.env.AUDIO_URL_ALLOWED_HOSTS ?? 'ringover.com')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function isAllowedAudioUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw)
+    if (u.protocol !== 'https:') return false
+    const host = u.hostname.toLowerCase()
+    return allowedAudioHosts().some(
+      (allowed) => host === allowed || host.endsWith(`.${allowed}`),
+    )
+  } catch {
+    return false
+  }
+}
+
 export async function POST(req: NextRequest) {
   // Rate limit — clé par IP.
   const rl = await checkRateLimit(apiLimiter, getClientKey(req))
   if (!rl.allowed) {
     return rateLimitedResponse(rl.retryAfterSeconds)
+  }
+
+  // Secret partagé interne — cette route écrit avec la service key (bypass RLS)
+  // et n'est appelée QUE par nos webhooks. Fail-closed si le secret est absent.
+  if (!verifyInternalSecret(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   let body: { callId?: string; audioUrl?: string; simTranscript?: SimTranscript }
@@ -68,6 +99,16 @@ export async function POST(req: NextRequest) {
   const { callId, audioUrl, simTranscript } = body
   if (!callId) {
     return NextResponse.json({ error: 'callId requis' }, { status: 400 })
+  }
+
+  // simTranscript est réservé à la simulation/dev. Jamais accepté en production,
+  // même avec le secret interne valide (défense en profondeur : un secret fuité
+  // ne doit pas permettre d'injecter un faux transcript).
+  if (simTranscript && process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { error: 'simTranscript interdit en production' },
+      { status: 400 },
+    )
   }
 
   const supabase = getAdminClient()
@@ -134,7 +175,10 @@ export async function POST(req: NextRequest) {
     const appUrl = req.nextUrl.origin
     fetch(`${appUrl}/api/analyze`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
+      },
       body: JSON.stringify({ callId }),
     }).catch((err) => {
       console.error('[transcribe] Erreur fire-and-forget /api/analyze:', err)
@@ -152,6 +196,19 @@ export async function POST(req: NextRequest) {
     console.error('[transcribe] Pas d\'audio_url pour call:', callId)
     await supabase.from('calls').update({ status: 'failed' }).eq('id', callId)
     return NextResponse.json({ error: 'Pas d\'audio_url' }, { status: 422 })
+  }
+
+  // Garde-fou SSRF : AssemblyAI va FETCHER cette URL. On exige https + un hôte
+  // autorisé pour ne pas lui laisser suivre une URL arbitraire (SSRF aveugle,
+  // exfiltration de budget). L'allowlist est configurable par env
+  // (AUDIO_URL_ALLOWED_HOSTS, liste CSV de suffixes d'hôte) car l'hôte réel des
+  // enregistrements Ringover (souvent un CDN/stockage) reste à confirmer au
+  // premier vrai appel — on l'ajoute alors dans Vercel sans recoder. Défaut :
+  // domaines Ringover connus.
+  if (!isAllowedAudioUrl(effectiveAudioUrl)) {
+    console.error('[transcribe] audio_url non autorisée:', effectiveAudioUrl)
+    await supabase.from('calls').update({ status: 'failed' }).eq('id', callId)
+    return NextResponse.json({ error: 'audio_url non autorisée' }, { status: 422 })
   }
 
   // Passer en "transcribing"

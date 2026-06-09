@@ -185,7 +185,10 @@ export async function POST(req: NextRequest) {
   const transcribeUrl = new URL('/api/transcribe', req.url).toString()
   fetch(transcribeUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
+    },
     body: JSON.stringify({
       callId: insertedCall.id,
       ...(simTranscript ? { simTranscript } : {}),

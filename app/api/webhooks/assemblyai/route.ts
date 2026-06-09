@@ -142,7 +142,10 @@ export async function POST(req: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   fetch(`${appUrl}/api/analyze`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
+    },
     body: JSON.stringify({ callId: call.id }),
   }).catch((err) => {
     console.error('[webhook/assemblyai] Erreur fire-and-forget /api/analyze:', err)

@@ -40,6 +40,7 @@ import {
   getClientKey,
   rateLimitedResponse,
 } from '@/lib/rate-limit'
+import { verifyInternalSecret } from '@/lib/internal-auth'
 
 function getAdminClient() {
   return createClient(
@@ -110,6 +111,13 @@ export async function POST(req: NextRequest) {
   const rl = await checkRateLimit(apiLimiter, getClientKey(req))
   if (!rl.allowed) {
     return rateLimitedResponse(rl.retryAfterSeconds)
+  }
+
+  // Secret partagé interne — cette route écrit avec la service key (bypass RLS),
+  // lance Claude et pousse dans HubSpot. Appelée QUE par nos webhooks / le hop
+  // transcribe→analyze. Fail-closed si le secret est absent.
+  if (!verifyInternalSecret(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   let body: { callId?: string }
