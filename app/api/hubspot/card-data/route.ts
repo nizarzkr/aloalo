@@ -14,11 +14,11 @@
  *   (base64) avec le client secret, et on compare. Rien n'est exposé au
  *   navigateur (≠ carte classique publique, cf. project_hubspot_crm_card_unauth).
  *
- *   ⚠️ Dégradation douce MVP : tant que HUBSPOT_APP_CLIENT_SECRET n'est pas
- *   configurée, on LAISSE PASSER (en loguant un warning) pour pouvoir d'abord
- *   valider l'affichage de bout en bout. Dès que la variable est posée sur
- *   Vercel, la vérification devient obligatoire. À retirer (= rendre strict) au
- *   plus tard à la migration Public App + OAuth (1er client payant).
+ *   🔒 FAIL CLOSED : en production, si HUBSPOT_APP_CLIENT_SECRET est absente, on
+ *   refuse TOUT (401) — on ne sert jamais de données tenant sans vérifier la
+ *   signature. Tolérance UNIQUEMENT hors prod (NODE_ENV !== 'production') pour
+ *   itérer en local sans secret. La variable doit donc être posée dans TOUS les
+ *   environnements Vercel (Production, Preview, Development).
  *
  * Query string (portalId est ajouté automatiquement par hubspot.fetch) :
  *   portalId  — Hub ID du portail HubSpot → identifie l'org Aloalo
@@ -52,15 +52,23 @@ function publicUrl(req: NextRequest): string {
   return `${proto}://${host}${req.nextUrl.pathname}${req.nextUrl.search}`
 }
 
-// Vérifie la signature v3. Renvoie true si valide OU si la vérif est désactivée
-// (secret non configuré → dégradation douce MVP, voir en-tête du fichier).
+// Vérifie la signature v3. Renvoie true si valide. Secret absent → fail closed
+// en prod (401), toléré hors prod uniquement (voir en-tête du fichier).
 function isAuthorized(req: NextRequest): boolean {
   const clientSecret = process.env.HUBSPOT_APP_CLIENT_SECRET
   if (!clientSecret) {
-    console.warn(
-      '[hubspot/card-data] HUBSPOT_APP_CLIENT_SECRET absente — vérification de signature DÉSACTIVÉE (dégradation douce MVP)',
+    // Fail closed : sans secret on ne sert AUCUNE donnée tenant en prod.
+    // Tolérance dev uniquement (NODE_ENV !== 'production') pour itérer en local.
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        '[hubspot/card-data] HUBSPOT_APP_CLIENT_SECRET absente — vérification de signature désactivée (DEV uniquement)',
+      )
+      return true
+    }
+    console.error(
+      '[hubspot/card-data] HUBSPOT_APP_CLIENT_SECRET absente en production → 401 (fail closed)',
     )
-    return true
+    return false
   }
 
   const signature = req.headers.get('x-hubspot-signature-v3')

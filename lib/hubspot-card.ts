@@ -1,17 +1,13 @@
 // ============================================================================
 // lib/hubspot-card.ts — Données de la carte HubSpot "Historique Aloalo".
 // ============================================================================
-// Logique partagée entre :
-//   - la carte CLASSIQUE (app/api/hubspot/crm-card/route.ts) — dépréciée par
-//     HubSpot, sunset le 31 oct. 2026 ;
-//   - le nouvel endpoint (app/api/hubspot/card-data/route.ts) appelé DIRECTEMENT
-//     par l'App Card React (UI Extension) via hubspot.fetch(), auth par signature
-//     HubSpot v3.
+// Logique consommée par l'endpoint app/api/hubspot/card-data/route.ts, appelé
+// DIRECTEMENT par l'App Card React (UI Extension) via hubspot.fetch(), auth par
+// signature HubSpot v3. (La carte classique a été retirée — voir issue #3.)
 //
 // On a extrait cette logique pour qu'un seul endroit fasse : portalId → org →
-// téléphone du contact → derniers appels analysés. Les deux surfaces ci-dessus
-// se contentent ensuite de FORMATER le résultat (payload CRM Card v2 pour la
-// carte classique, JSON propre pour l'App Card).
+// téléphone du contact → derniers appels analysés. L'endpoint se contente
+// ensuite de FORMATER le résultat (JSON propre pour l'App Card).
 //
 // Renvoie soit des données (`CardData`), soit un message d'état vide
 // (`{ message }`) — jamais d'exception métier (les erreurs réseau HubSpot sont
@@ -46,12 +42,6 @@ export type DealCardData = {
 // contact n'a pas `avgScore`, la carte deal n'a pas `axe`).
 export type ContactCardResult = CardData | { message: string }
 export type DealCardResult = DealCardData | { message: string }
-export type CardResult = ContactCardResult | DealCardResult
-
-// Garde de type pratique pour l'appelant.
-export function isCardMessage(r: CardResult): r is { message: string } {
-  return 'message' in r
-}
 
 function getAdminClient() {
   return createClient(

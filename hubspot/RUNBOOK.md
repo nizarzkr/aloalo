@@ -147,4 +147,4 @@ score / nb d'appels / dernier appel / axe + le bouton vers le détail.
 - `organizations.hubspot_portal_id` en DB = Hub ID du portail de test (sinon "Portail non configuré").
 - Endpoint seul : `curl -H "x-aloalo-card-secret: <secret>" ".../api/hubspot/card-data?portalId=<hub>&contactId=<id>"`
   → JSON attendu ; sans le header → 401.
-- Une fois la carte validée : on pourra retirer la route classique `/api/hubspot/crm-card`.
+- La route classique `/api/hubspot/crm-card` a été retirée (issue #3) : dépréciée par HubSpot et non authentifiée. Seul `/api/hubspot/card-data` (signature v3, fail closed en prod) sert désormais les données.
