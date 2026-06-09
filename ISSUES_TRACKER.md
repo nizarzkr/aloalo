@@ -21,7 +21,7 @@ please ship issue #N directly to main
 - [x] **#5** 🟠 Protéger les credentials Ringover/HubSpot des clients (plaintext + lisibles par tous) `security` `gdpr`
 
 ## Phase 2 — Pipeline non authentifié
-- [ ] **#2** 🟠 Authentifier les routes internes /api/transcribe et /api/analyze `security`
+- [x] **#2** 🟠 Authentifier les routes internes /api/transcribe et /api/analyze `security`
 - [ ] **#4** 🟠 Sécuriser le webhook AssemblyAI : signature + rate limit + lookup indexé `security` `reliability`
 - [ ] **#15** 🟡 Le rate limiter doit « fail closed » (ou alerter) en prod si Upstash absent `ops` `security`
 
@@ -66,7 +66,7 @@ please ship issue #N directly to main
 ---
 
 ## Progression
-- **3 / 34** issues fermées.
-- **Prochaine issue : #2** → nouvelle session → `please ship issue #2 directly to main`
+- **4 / 34** issues fermées.
+- **Prochaine issue : #4** → nouvelle session → `please ship issue #4 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
