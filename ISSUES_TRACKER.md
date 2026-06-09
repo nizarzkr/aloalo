@@ -18,7 +18,7 @@ please ship issue #N directly to main
 ## Phase 1 — Brèches multi-tenant & auth (les plus urgentes)
 - [x] **#1** 🔴 RLS : empêcher un user de modifier son propre rôle / organization_id `security`
 - [x] **#3** 🟠 Endpoints carte HubSpot : passer en « fail closed » + retirer crm-card déprécié `security`
-- [ ] **#5** 🟠 Protéger les credentials Ringover/HubSpot des clients (plaintext + lisibles par tous) `security` `gdpr`
+- [x] **#5** 🟠 Protéger les credentials Ringover/HubSpot des clients (plaintext + lisibles par tous) `security` `gdpr`
 
 ## Phase 2 — Pipeline non authentifié
 - [ ] **#2** 🟠 Authentifier les routes internes /api/transcribe et /api/analyze `security`
@@ -66,7 +66,7 @@ please ship issue #N directly to main
 ---
 
 ## Progression
-- **2 / 34** issues fermées.
-- **Prochaine issue : #5** → nouvelle session → `please ship issue #5 directly to main`
+- **3 / 34** issues fermées.
+- **Prochaine issue : #2** → nouvelle session → `please ship issue #2 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
