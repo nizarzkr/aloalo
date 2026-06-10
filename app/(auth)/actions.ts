@@ -1,11 +1,29 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import {
+  authLimiter,
+  checkRateLimit,
+  getClientKeyFromHeaders,
+} from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 
 export async function signup(formData: FormData) {
+  // Rate limit auth — freine le spam de signup (chaque signup crée org +
+  // profile via trigger et envoie un email de confirmation).
+  const headerList = await headers();
+  const rl = await checkRateLimit(authLimiter, getClientKeyFromHeaders(headerList));
+  if (!rl.allowed) {
+    redirect(
+      `/signup?error=${encodeURIComponent(
+        "Trop de tentatives. Réessayez dans une minute.",
+      )}`,
+    );
+  }
+
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
   const fullName = String(formData.get("full_name") ?? "");
@@ -45,6 +63,18 @@ export async function signup(formData: FormData) {
 }
 
 export async function login(formData: FormData) {
+  // Rate limit auth — freine le credential-stuffing (brute-force d'un mot de
+  // passe contre une adresse connue).
+  const headerList = await headers();
+  const rl = await checkRateLimit(authLimiter, getClientKeyFromHeaders(headerList));
+  if (!rl.allowed) {
+    redirect(
+      `/login?error=${encodeURIComponent(
+        "Trop de tentatives. Réessayez dans une minute.",
+      )}`,
+    );
+  }
+
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
 

@@ -90,6 +90,10 @@ function buildLimiter(
 
 export const apiLimiter = buildLimiter('api', 10, 10)
 export const webhookLimiter = buildLimiter('webhook', 100, 60)
+// Auth (login/signup) — 5 tentatives / 60s. Plus strict que apiLimiter pour
+// freiner le credential-stuffing et le spam de signup (chaque signup crée
+// org + profile via trigger et envoie un email de confirmation).
+export const authLimiter = buildLimiter('auth', 5, 60)
 
 /**
  * Extrait une clé d'identification pour le rate limiting depuis la requête.
@@ -99,6 +103,19 @@ export function getClientKey(req: NextRequest): string {
   const xff = req.headers.get('x-forwarded-for')
   if (xff) return xff.split(',')[0]!.trim()
   const realIp = req.headers.get('x-real-ip')
+  if (realIp) return realIp
+  return 'anonymous'
+}
+
+/**
+ * Variante de getClientKey pour les Server Actions, qui n'ont pas de
+ * NextRequest. L'appelant lit les headers via `await headers()` (next/headers)
+ * et passe l'objet ici. Même dérivation de clé IP que getClientKey.
+ */
+export function getClientKeyFromHeaders(headerList: Headers): string {
+  const xff = headerList.get('x-forwarded-for')
+  if (xff) return xff.split(',')[0]!.trim()
+  const realIp = headerList.get('x-real-ip')
   if (realIp) return realIp
   return 'anonymous'
 }
