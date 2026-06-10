@@ -13,17 +13,19 @@
 // READ-ONLY : ce job ne fait que LIRE usage_logs. Il n'y insère rien (la contrainte
 // CHECK usage_logs.service n'autorise que assemblyai/anthropic/resend/stripe).
 //
-// Déploiement (action manuelle Nizar, pas pendant le dev) :
-//   supabase functions deploy spend-alert --project-ref kynqancfanvekodbhukd
-//   puis Dashboard Supabase → Database → Cron Jobs : créer une tâche QUOTIDIENNE
-//   qui appelle https://kynqancfanvekodbhukd.supabase.co/functions/v1/spend-alert
-//   avec l'header Authorization: Bearer <CRON_SECRET>.
+// État (issue #20) : fonction DÉPLOYÉE et cron pg_cron QUOTIDIEN actif —
+//   cron.job 'spend-alert-daily', schedule '0 23 * * *' (23h UTC), qui POST sur
+//   https://kynqancfanvekodbhukd.supabase.co/functions/v1/spend-alert avec
+//   l'header Authorization: Bearer <CRON_SECRET>. verify_jwt=false (auth maison).
+//   Pour redéployer : supabase functions deploy spend-alert --project-ref kynqancfanvekodbhukd
 //
 // Secrets de la fonction (Supabase → Edge Functions → Secrets, PAS Vercel) :
-//   CRON_SECRET            — partagé avec delete-old-audio (auth du cron).
+//   CRON_SECRET            — OK, partagé avec delete-old-audio (auth du cron).
 //   SPEND_ALERT_DAILY_EUR  — seuil quotidien en € (défaut 10 si absent).
-//   SPEND_ALERT_TO         — adresse ops qui reçoit l'alerte.
-//   RESEND_API_KEY         — déjà présent (envoi d'email).
+//   SPEND_ALERT_TO         — adresse ops qui reçoit l'alerte. À RENSEIGNER sinon
+//                            l'alerte est seulement loggée (pas d'email).
+//   RESEND_API_KEY         — clé Resend. À RENSEIGNER côté Edge Function pour
+//                            l'envoi d'email (distincte du secret Vercel).
 // ============================================================================
 
 // @ts-expect-error — résolu côté Deno au runtime de l'Edge Function.
