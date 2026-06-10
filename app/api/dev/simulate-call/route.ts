@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { MOCK_TRANSCRIPTS } from '@/lib/dev/mock-transcripts'
 import { createClient } from '@/lib/supabase/server'
+import { isSimulatorEnabled } from '@/lib/dev/is-simulator-enabled'
 import {
   apiLimiter,
   checkRateLimit,
@@ -9,11 +10,16 @@ import {
   rateLimitedResponse,
 } from '@/lib/rate-limit'
 
-// Endpoint ouvert en prod (phase MVP feedback). La route exige une session
-// valide + rate-limit Upstash pour contenir le coût AssemblyAI/Anthropic en
-// cas d'abus.
+// Outil DEV : simule un appel Ringover et le rejoue dans le webhook réel.
+// Désactivé en production (cf. isSimulatorEnabled). Sinon : session requise +
+// rate-limit Upstash pour contenir le coût AssemblyAI/Anthropic.
 
 export async function POST(req: NextRequest) {
+  // Hors prod uniquement : un 404 rend la route invisible en production.
+  if (!isSimulatorEnabled()) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   // Rate limit avant tout traitement — un simulate-call déclenche une vraie
   // analyse Claude (~0,005€ par hit). 10 req/10s par IP est suffisant pour
   // l'usage normal et stoppe net les boucles automatisées.

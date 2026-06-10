@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Activity, PhoneCall, Play } from "lucide-react";
+import { Activity, PhoneCall } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -205,16 +205,7 @@ export default async function CallsListPage({
               <EmptyState
                 icon={PhoneCall}
                 title="Aucun appel analysé"
-                description="Vos appels Ringover apparaîtront ici une fois analysés. Vous pouvez simuler un appel pour découvrir la plateforme."
-                action={
-                  <Link
-                    href="/dev/test"
-                    className={cn(buttonVariants({ size: "lg" }))}
-                  >
-                    <Play className="size-4" />
-                    Simuler un appel
-                  </Link>
-                }
+                description="Vos appels Ringover apparaîtront ici une fois analysés."
               />
             ) : (
               <p className="py-8 text-center text-sm text-muted-foreground">
