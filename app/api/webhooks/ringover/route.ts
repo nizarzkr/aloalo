@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import crypto from 'crypto'
 import * as Sentry from '@sentry/nextjs'
 import { getRingoverCallRecording } from '@/lib/ringover'
@@ -233,28 +233,36 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 9. Déclencher la transcription en fire-and-forget
-  //    On ne bloque pas la réponse Ringover sur le résultat de la transcription
+  // 9. Déclencher la transcription dans after() : exécuté APRÈS l'envoi de la
+  //    réponse Ringover, mais Vercel garde la fonction vivante jusqu'au bout —
+  //    un fetch fire-and-forget nu pourrait être coupé avant de partir (gel serverless).
   const transcribeUrl = new URL('/api/transcribe', req.url).toString()
-  fetch(transcribeUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
-    },
-    body: JSON.stringify({
-      callId: insertedCall.id,
-      ...(simTranscript ? { simTranscript } : {}),
-      // Passé uniquement en mode réel : /api/transcribe utilise audioUrl si
-      // présent, sinon retombe sur la valeur stockée en DB (audio_url).
-      ...(resolvedAudioUrl && !simTranscript ? { audioUrl: resolvedAudioUrl } : {}),
-    }),
-  }).catch((err) => {
-    console.error('[webhook/ringover] Erreur déclenchement transcription:', err)
-    Sentry.captureException(err, {
-      tags: { route: '/api/webhooks/ringover', stage: 'trigger_transcribe' },
-      extra: { callId: insertedCall.id, organizationId },
-    })
+  after(async () => {
+    try {
+      const res = await fetch(transcribeUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
+        },
+        body: JSON.stringify({
+          callId: insertedCall.id,
+          ...(simTranscript ? { simTranscript } : {}),
+          // Passé uniquement en mode réel : /api/transcribe utilise audioUrl si
+          // présent, sinon retombe sur la valeur stockée en DB (audio_url).
+          ...(resolvedAudioUrl && !simTranscript ? { audioUrl: resolvedAudioUrl } : {}),
+        }),
+      })
+      if (!res.ok) {
+        throw new Error(`/api/transcribe a répondu ${res.status}`)
+      }
+    } catch (err) {
+      console.error('[webhook/ringover] Erreur déclenchement transcription:', err)
+      Sentry.captureException(err, {
+        tags: { route: '/api/webhooks/ringover', stage: 'trigger_transcribe' },
+        extra: { callId: insertedCall.id, organizationId },
+      })
+    }
   })
 
   return NextResponse.json({ received: true })

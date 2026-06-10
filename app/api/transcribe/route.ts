@@ -27,7 +27,8 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { requestTranscription, estimateCostEur } from '@/lib/assemblyai'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import {
@@ -173,15 +174,28 @@ export async function POST(req: NextRequest) {
     // (invitations email J8) — l'utiliser ici renverrait les requêtes dev vers
     // la prod, qui ne connaît pas le callId en question.
     const appUrl = req.nextUrl.origin
-    fetch(`${appUrl}/api/analyze`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
-      },
-      body: JSON.stringify({ callId }),
-    }).catch((err) => {
-      console.error('[transcribe] Erreur fire-and-forget /api/analyze:', err)
+    // after() : on lance l'analyse APRÈS la réponse sans bloquer, et Vercel garde
+    // la fonction vivante (un fetch fire-and-forget nu serait coupé au gel).
+    after(async () => {
+      try {
+        const res = await fetch(`${appUrl}/api/analyze`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
+          },
+          body: JSON.stringify({ callId }),
+        })
+        if (!res.ok) {
+          throw new Error(`/api/analyze a répondu ${res.status}`)
+        }
+      } catch (err) {
+        console.error('[transcribe] Erreur déclenchement /api/analyze:', err)
+        Sentry.captureException(err, {
+          tags: { route: '/api/transcribe', stage: 'trigger_analyze' },
+          extra: { callId, organizationId: call.organization_id },
+        })
+      }
     })
 
     return NextResponse.json({ success: true, mode: 'simulation' })

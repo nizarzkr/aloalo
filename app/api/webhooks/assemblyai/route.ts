@@ -20,7 +20,8 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import crypto from 'crypto'
 import { getTranscriptionResult, normalizeSegments, estimateCostEur } from '@/lib/assemblyai'
 import {
@@ -161,19 +162,32 @@ export async function POST(req: NextRequest) {
 
   console.log('[webhook/assemblyai] ✅ Transcription OK pour call:', call.id, `(${durationSeconds}s, ${costEur}€)`)
 
-  // 7. Fire-and-forget vers /api/analyze
+  // 7. Déclencher l'analyse dans after()
   //    AssemblyAI a un timeout court (~10s) sur notre webhook ; l'analyse Claude
-  //    peut prendre 5-15s. On répond 200 immédiatement et on lance l'analyse en arrière-plan.
+  //    peut prendre 5-15s. On répond 200 immédiatement et after() garde la
+  //    fonction vivante pour que la requête /api/analyze parte réellement
+  //    (un fetch fire-and-forget nu serait coupé au gel de la fonction).
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-  fetch(`${appUrl}/api/analyze`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
-    },
-    body: JSON.stringify({ callId: call.id }),
-  }).catch((err) => {
-    console.error('[webhook/assemblyai] Erreur fire-and-forget /api/analyze:', err)
+  after(async () => {
+    try {
+      const res = await fetch(`${appUrl}/api/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
+        },
+        body: JSON.stringify({ callId: call.id }),
+      })
+      if (!res.ok) {
+        throw new Error(`/api/analyze a répondu ${res.status}`)
+      }
+    } catch (err) {
+      console.error('[webhook/assemblyai] Erreur déclenchement /api/analyze:', err)
+      Sentry.captureException(err, {
+        tags: { route: '/api/webhooks/assemblyai', stage: 'trigger_analyze' },
+        extra: { callId: call.id, organizationId: call.organization_id },
+      })
+    }
   })
 
   return NextResponse.json({ received: true })
