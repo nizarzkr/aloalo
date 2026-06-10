@@ -30,5 +30,10 @@ jobs:
         # Pas de script "typecheck" dans package.json ; tsconfig a déjà noEmit:true.
         run: npx tsc --noEmit
 
+      - name: Test
+        # Tests de non-régression (Vitest). Le test d'isolation multi-tenant
+        # (issue #26) est hermétique (Supabase mocké) → aucun secret ni DB requis.
+        run: npm test
+
       - name: Build
         run: npm run build
