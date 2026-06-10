@@ -9,12 +9,20 @@
  *                      (Ringover, AssemblyAI). Doit absorber des pics legit
  *                      (plusieurs appels qui terminent en même temps).
  *
- * Si les variables UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN ne sont
- * pas définies (ex : dev local sans compte Upstash), on désactive le limiter
- * (fail-open) et on log un warning une seule fois. En prod sur Vercel, les
- * vars doivent être présentes — sinon les routes ne sont pas protégées.
+ * Comportement quand UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN sont
+ * absentes :
+ *   - En PRODUCTION (Vercel production/preview ou NODE_ENV=production) : on
+ *     échoue FORT. getRedis() envoie une alerte Sentry (niveau fatal) puis throw
+ *     au cold-start (à l'évaluation du module, via buildLimiter ci-dessous). Un
+ *     déploiement mal configuré plante immédiatement et bruyamment au lieu de
+ *     servir du trafic avec le rate limiting silencieusement désactivé (sinon
+ *     les routes payantes / non authentifiées n'ont plus aucun frein externe).
+ *   - En DEV local (sans VERCEL_ENV et NODE_ENV != production) : on tolère le
+ *     fail-open — le limiter est désactivé et on log un warning une seule fois,
+ *     pour pouvoir bosser sans compte Upstash.
  */
 
+import * as Sentry from '@sentry/nextjs'
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 import { NextResponse, type NextRequest } from 'next/server'
@@ -22,14 +30,32 @@ import { NextResponse, type NextRequest } from 'next/server'
 let cachedRedis: Redis | null = null
 let warnedMissingEnv = false
 
+// True en prod Vercel (production ou preview) OU NODE_ENV=production.
+// Mêmes variables que sentry.server.config.ts pour rester cohérent.
+function isProductionRuntime(): boolean {
+  const vercelEnv = process.env.VERCEL_ENV
+  if (vercelEnv) return vercelEnv === 'production' || vercelEnv === 'preview'
+  return process.env.NODE_ENV === 'production'
+}
+
 function getRedis(): Redis | null {
   if (cachedRedis) return cachedRedis
   const url = process.env.UPSTASH_REDIS_REST_URL
   const token = process.env.UPSTASH_REDIS_REST_TOKEN
   if (!url || !token) {
+    // En prod, l'absence des clés Upstash désactiverait silencieusement le
+    // rate limiting sur des routes payantes / non authentifiées. On échoue fort
+    // (alerte Sentry + throw au cold-start visible) plutôt que fail-open.
+    if (isProductionRuntime()) {
+      const msg =
+        '[rate-limit] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN absents en production — rate limiting non disponible'
+      Sentry.captureMessage(msg, 'fatal')
+      throw new Error(msg)
+    }
+    // Dev local sans compte Upstash : on tolère le fail-open, mais on le signale.
     if (!warnedMissingEnv) {
       console.warn(
-        '[rate-limit] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN absents — rate limiting désactivé',
+        '[rate-limit] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN absents — rate limiting désactivé (dev uniquement)',
       )
       warnedMissingEnv = true
     }

@@ -23,7 +23,7 @@ please ship issue #N directly to main
 ## Phase 2 — Pipeline non authentifié
 - [x] **#2** 🟠 Authentifier les routes internes /api/transcribe et /api/analyze `security`
 - [x] **#4** 🟠 Sécuriser le webhook AssemblyAI : signature + rate limit + lookup indexé `security` `reliability`
-- [ ] **#15** 🟡 Le rate limiter doit « fail closed » (ou alerter) en prod si Upstash absent `ops` `security`
+- [x] **#15** 🟡 Le rate limiter doit « fail closed » (ou alerter) en prod si Upstash absent `ops` `security`
 
 ## Phase 3 — Intégrité des données & fiabilité
 - [ ] **#6** 🟠 Réconcilier le schéma `calls` : migrations manquantes callee_number / provider_call_id `reliability`
@@ -66,7 +66,7 @@ please ship issue #N directly to main
 ---
 
 ## Progression
-- **5 / 34** issues fermées.
-- **Prochaine issue : #15** → nouvelle session → `please ship issue #15 directly to main`
+- **6 / 34** issues fermées.
+- **Prochaine issue : #6** → nouvelle session → `please ship issue #6 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
