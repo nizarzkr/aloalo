@@ -99,11 +99,16 @@ export async function POST(req: NextRequest) {
 
   // 2. Si AssemblyAI signale une erreur
   if (status === 'error') {
+    const message = 'La transcription a échoué côté AssemblyAI (audio illisible ou trop court).'
+    console.error('[webhook/assemblyai] Transcription en erreur:', transcript_id)
+    Sentry.captureException(new Error(`assemblyai transcript error: ${transcript_id}`), {
+      tags: { route: '/api/webhooks/assemblyai', stage: 'transcript_error' },
+      extra: { transcript_id, callId: call.id, organizationId: call.organization_id },
+    })
     await supabase
       .from('calls')
-      .update({ status: 'failed' })
+      .update({ status: 'failed', error_message: message })
       .eq('id', call.id)
-    console.error('[webhook/assemblyai] Transcription en erreur:', transcript_id)
     return NextResponse.json({ received: true })
   }
 
@@ -112,8 +117,16 @@ export async function POST(req: NextRequest) {
   try {
     transcript = await getTranscriptionResult(transcript_id)
   } catch (err) {
-    console.error('[webhook/assemblyai] Erreur fetch transcript:', err)
-    await supabase.from('calls').update({ status: 'failed' }).eq('id', call.id)
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[webhook/assemblyai] Erreur fetch transcript:', message)
+    Sentry.captureException(err, {
+      tags: { route: '/api/webhooks/assemblyai', stage: 'fetch_transcript' },
+      extra: { transcript_id, callId: call.id, organizationId: call.organization_id },
+    })
+    await supabase
+      .from('calls')
+      .update({ status: 'failed', error_message: `Récupération transcription: ${message}` })
+      .eq('id', call.id)
     return NextResponse.json({ error: 'AssemblyAI fetch error' }, { status: 500 })
   }
 
@@ -146,6 +159,13 @@ export async function POST(req: NextRequest) {
 
   if (updateError) {
     console.error('[webhook/assemblyai] Erreur update call:', updateError)
+    // On ne flippe PAS le statut ici : l'update a échoué pour une raison
+    // potentiellement transitoire (DB) et le call est encore 'transcribing'.
+    // On capture juste l'incident pour diagnostic — le sweeper (#12) débloquera.
+    Sentry.captureException(updateError, {
+      tags: { route: '/api/webhooks/assemblyai', stage: 'db_update' },
+      extra: { transcript_id, callId: call.id, organizationId: call.organization_id },
+    })
     return NextResponse.json({ error: 'DB update error' }, { status: 500 })
   }
 

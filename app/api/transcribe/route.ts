@@ -207,8 +207,16 @@ export async function POST(req: NextRequest) {
   // DB pour les retries manuels où on relance /api/transcribe sans body.
   const effectiveAudioUrl = audioUrl ?? call.audio_url
   if (!effectiveAudioUrl) {
+    const message = "Audio introuvable pour cet appel (pas d'URL audio à transcrire)."
     console.error('[transcribe] Pas d\'audio_url pour call:', callId)
-    await supabase.from('calls').update({ status: 'failed' }).eq('id', callId)
+    Sentry.captureException(new Error('transcribe: missing audio_url'), {
+      tags: { route: '/api/transcribe', stage: 'audio_url' },
+      extra: { callId, organizationId: call.organization_id },
+    })
+    await supabase
+      .from('calls')
+      .update({ status: 'failed', error_message: message })
+      .eq('id', callId)
     return NextResponse.json({ error: 'Pas d\'audio_url' }, { status: 422 })
   }
 
@@ -220,8 +228,16 @@ export async function POST(req: NextRequest) {
   // premier vrai appel — on l'ajoute alors dans Vercel sans recoder. Défaut :
   // domaines Ringover connus.
   if (!isAllowedAudioUrl(effectiveAudioUrl)) {
+    const message = "URL audio non autorisée : l'enregistrement provient d'un hôte non approuvé."
     console.error('[transcribe] audio_url non autorisée:', effectiveAudioUrl)
-    await supabase.from('calls').update({ status: 'failed' }).eq('id', callId)
+    Sentry.captureException(new Error('transcribe: audio_url not allowed'), {
+      tags: { route: '/api/transcribe', stage: 'audio_url_allowlist' },
+      extra: { callId, organizationId: call.organization_id },
+    })
+    await supabase
+      .from('calls')
+      .update({ status: 'failed', error_message: message })
+      .eq('id', callId)
     return NextResponse.json({ error: 'audio_url non autorisée' }, { status: 422 })
   }
 
@@ -254,8 +270,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, mode: 'real', transcriptId })
 
   } catch (err) {
-    console.error('[transcribe] Erreur AssemblyAI:', err)
-    await supabase.from('calls').update({ status: 'failed' }).eq('id', callId)
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[transcribe] Erreur AssemblyAI:', message)
+    Sentry.captureException(err, {
+      tags: { route: '/api/transcribe', stage: 'assemblyai_request' },
+      extra: { callId, organizationId: call.organization_id },
+    })
+    await supabase
+      .from('calls')
+      .update({ status: 'failed', error_message: `Transcription: ${message}` })
+      .eq('id', callId)
     return NextResponse.json({ error: 'AssemblyAI error' }, { status: 500 })
   }
 }

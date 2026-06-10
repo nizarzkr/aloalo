@@ -24,6 +24,7 @@ import { EmptyState } from "@/components/dashboard/empty-state";
 import { UpgradeBanner } from "@/components/dashboard/upgrade-banner";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { HubspotRefreshButton } from "@/components/dashboard/hubspot-refresh-button";
+import { RetryTranscriptionButton } from "@/components/dashboard/retry-transcription-button";
 import { ConversationDynamics } from "@/components/dashboard/conversation-dynamics";
 import { CallProgress } from "@/components/dashboard/call-progress";
 import { BehavioralSignals as BehavioralSignalsView } from "@/components/dashboard/behavioral-signals";
@@ -800,14 +801,19 @@ export default async function CallDetailPage({
             <Card className="p-2">
               <CardContent>
                 {isFailedNonUsage ? (
-                  <EmptyState
-                    icon={AlertTriangle}
-                    title="L'analyse a échoué"
-                    description={
-                      errorMsg ??
-                      "L'analyse n'a pas pu aboutir. Réessayez plus tard ou contactez le support."
-                    }
-                  />
+                  <div className="space-y-4">
+                    <EmptyState
+                      icon={AlertTriangle}
+                      title="L'analyse a échoué"
+                      description={
+                        errorMsg ??
+                        "L'analyse n'a pas pu aboutir. Réessayez plus tard ou contactez le support."
+                      }
+                    />
+                    <div className="flex justify-center">
+                      <RetryTranscriptionButton callId={call.id as string} />
+                    </div>
+                  </div>
                 ) : (
                   <EmptyState
                     icon={FileQuestion}
