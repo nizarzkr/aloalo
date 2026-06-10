@@ -38,7 +38,9 @@ please ship issue #N directly to main
 - [x] **#7** 🟠 Bump Next.js 16.2.4 → 16.2.7 (clore les advisories HIGH) `dependencies` `security`
   - **En clair :** Next.js est le « moteur » sur lequel tout le site tourne. Ses créateurs ont publié un correctif qui bouche 4 trous de sécurité connus, dont un qui aurait pu laisser une requête atteindre une page protégée (`/dashboard/*`) sans passer le contrôle d'accès. On était une mini-version en retard.
   - **Ce qu'on a fait :** On a pris la mise à jour gratuite (16.2.4 → 16.2.7, un simple « patch » sans changement de comportement). Les alertes de sécurité HIGH sur le moteur ont disparu, l'app se construit et se vérifie sans erreur. Bonus : on a branché un petit robot (« Dependabot ») qui surveillera chaque semaine et proposera tout seul les prochains correctifs de sécurité — pour ne plus jamais être en retard sans le savoir.
-- [ ] **#18** 🟡 Ajouter un workflow CI + protection de branche sur `main` `ops`
+- [x] **#18** 🟡 Ajouter un workflow CI + protection de branche sur `main` `ops`
+  - **En clair :** Jusqu'ici, dès que du code était envoyé, il partait en ligne tout de suite — aucun robot ne le relisait avant. Une faute de frappe qui casse l'appli pouvait donc atteindre les utilisateurs sans que personne s'en aperçoive.
+  - **Ce qu'on a fait :** On a embauché un « robot vérificateur » (GitHub Actions) qui, à chaque envoi de code, rejoue trois contrôles — relecture du style (lint), vérification des types, et construction complète de l'appli. S'il trouve un problème, il lève un drapeau rouge avant la mise en ligne. En branchant ce robot, on a aussi découvert et corrigé 2 petites scories dans le code existant (un apostrophe mal échappé, un import inutilisé), et calmé une alerte React trop zélée (passée d'« erreur » à simple « avertissement » : le code visé marche très bien et le commentaire explique pourquoi). (⚠️ action de ton côté : dans GitHub → Settings → Branches, activer « Require status checks to pass » sur `main` en sélectionnant le contrôle `build` — détails plus bas.)
 
 ## Phase 5 — Tout le reste (medium → low)
 
@@ -79,7 +81,7 @@ Issues administratives / légales / RGPD parquées sur décision du founder (202
 ---
 
 ## Progression
-- **12 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **17** actives restantes.
-- **Prochaine issue : #18** → nouvelle session → `please ship issue #18 directly to main`
+- **13 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **16** actives restantes.
+- **Prochaine issue : #9** → nouvelle session → `please ship issue #9 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*

@@ -139,7 +139,7 @@ function ChangePlanButton({
           <DialogDescription>
             Stripe ajustera automatiquement la facturation : vous serez crédité
             du temps non consommé sur votre plan actuel et facturé au prorata du
-            plan {planName} jusqu'à la fin de la période en cours. La différence
+            plan {planName} jusqu&apos;à la fin de la période en cours. La différence
             apparaîtra sur votre prochaine facture.
           </DialogDescription>
         </DialogHeader>

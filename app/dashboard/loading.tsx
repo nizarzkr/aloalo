@@ -3,10 +3,7 @@ import {
   CardContent,
   CardHeader,
 } from "@/components/ui/card";
-import {
-  SkeletonBlock,
-  SkeletonCard,
-} from "@/components/dashboard/skeleton-card";
+import { SkeletonBlock } from "@/components/dashboard/skeleton-card";
 
 // Skeleton d'attente pour /dashboard. Reprend le layout exact de page.tsx :
 // titre, 3 KPI cards, liste des 5 derniers appels.
