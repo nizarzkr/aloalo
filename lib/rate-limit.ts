@@ -33,6 +33,12 @@ let warnedMissingEnv = false
 // True en prod Vercel (production ou preview) OU NODE_ENV=production.
 // Mêmes variables que sentry.server.config.ts pour rester cohérent.
 function isProductionRuntime(): boolean {
+  // `next build` met NODE_ENV=production ET NEXT_PHASE=phase-production-build.
+  // Construire n'est PAS servir du trafic : on ne doit pas fail-closed (throw)
+  // pendant le build, sinon la CI/Vercel plante à la collecte des données de
+  // /api/analyze alors qu'aucune requête n'est servie. Le fail-closed reste
+  // intact au vrai cold-start runtime (NEXT_PHASE n'y vaut plus cette valeur).
+  if (process.env.NEXT_PHASE === 'phase-production-build') return false
   const vercelEnv = process.env.VERCEL_ENV
   if (vercelEnv) return vercelEnv === 'production' || vercelEnv === 'preview'
   return process.env.NODE_ENV === 'production'
