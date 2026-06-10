@@ -30,7 +30,9 @@ please ship issue #N directly to main
 - [x] **#8** 🟡 Durcir le webhook Ringover : binding org, idempotence, signature `security` `reliability`
 - [x] **#10** 🟡 Envelopper les triggers du pipeline dans `after()` (survie au gel serverless) `reliability`
 - [x] **#11** 🟡 Rendre les transitions de statut atomiques (compare-and-set) — stop double facturation `reliability`
-- [ ] **#12** 🟡 Ajouter un sweeper pour les appels bloqués en `transcribing` (webhook manqué) `reliability`
+- [x] **#12** 🟡 Ajouter un sweeper pour les appels bloqués en `transcribing` (webhook manqué) `reliability`
+  - **En clair :** Quand un vrai appel part en transcription, c'est le prestataire (AssemblyAI) qui doit nous rappeler pour dire « c'est fini ». Si ce coup de fil se perd, l'appel reste bloqué sur l'écran « transcription en cours… » pour toujours, sans message d'erreur — et rien ne le débloque.
+  - **Ce qu'on a fait :** On a ajouté un petit gardien automatique qui passe toutes les 5 minutes. Il repère les appels coincés depuis plus de 15 min, tente une dernière fois de récupérer la transcription, et s'il n'y arrive pas, marque l'appel comme « échoué » avec une explication. Résultat : plus d'appel bloqué à l'infini. (⚠️ action de ton côté : ajouter la variable `CRON_SECRET` dans Vercel.)
 
 ## Phase 4 — Vie privée / légal & ops
 - [ ] **#22** 🟡 Remplir les placeholders légaux (mentions légales + responsable de traitement) `gdpr` `docs`
@@ -66,7 +68,7 @@ please ship issue #N directly to main
 ---
 
 ## Progression
-- **10 / 34** issues fermées.
-- **Prochaine issue : #12** → nouvelle session → `please ship issue #12 directly to main`
+- **11 / 34** issues fermées.
+- **Prochaine issue : #22** → nouvelle session → `please ship issue #22 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
