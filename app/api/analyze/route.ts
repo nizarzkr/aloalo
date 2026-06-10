@@ -213,8 +213,28 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // 3. Passer en "analyzing"
-  await supabase.from('calls').update({ status: 'analyzing' }).eq('id', callId)
+  // 3. Claim atomique transcribed → analyzing.
+  //    On ne met à jour QUE si le call est encore 'transcribed' : si une autre
+  //    invocation concurrente (webhook dupliqué, retry) a déjà pris la main,
+  //    aucune ligne n'est touchée et on s'arrête là sans payer Claude ni écraser
+  //    une analyse déjà produite.
+  const { data: claimed, error: claimError } = await supabase
+    .from('calls')
+    .update({ status: 'analyzing' })
+    .eq('id', callId)
+    .eq('status', 'transcribed')
+    .select('id')
+
+  if (claimError) {
+    console.error('[analyze] Erreur claim analyzing:', claimError)
+    return NextResponse.json({ error: 'DB error' }, { status: 500 })
+  }
+
+  if (!claimed || claimed.length === 0) {
+    // Déjà pris en charge par une autre invocation — no-op idempotent.
+    console.log('[analyze] Call déjà réclamé (concurrence), on ignore:', callId)
+    return NextResponse.json({ success: true, skipped: 'already_claimed' })
+  }
 
   // 4. Appel Claude — on passe aiProfile pour contextualiser le prompt si
   //    le profil de l'org est rempli. analyzeCall renvoie usedAiProfile=true

@@ -126,8 +126,12 @@ export async function POST(req: NextRequest) {
   // 4. Normaliser les segments (diarisation speaker A/B → notre format)
   const segments = normalizeSegments(transcript.utterances)
 
-  // 5. Mettre à jour le call en DB
-  const { error: updateError } = await supabase
+  // 5. Claim atomique transcribing → transcribed.
+  //    AssemblyAI peut livrer le webhook 'completed' plusieurs fois. On ne met à
+  //    jour QUE si le call est encore 'transcribing' : la première livraison gagne,
+  //    les suivantes ne touchent aucune ligne et ne relancent ni le log de coût ni
+  //    l'analyse.
+  const { data: claimed, error: updateError } = await supabase
     .from('calls')
     .update({
       status: 'transcribed',
@@ -137,10 +141,19 @@ export async function POST(req: NextRequest) {
       audio_url: null,
     })
     .eq('id', call.id)
+    .eq('status', 'transcribing')
+    .select('id')
 
   if (updateError) {
     console.error('[webhook/assemblyai] Erreur update call:', updateError)
     return NextResponse.json({ error: 'DB update error' }, { status: 500 })
+  }
+
+  if (!claimed || claimed.length === 0) {
+    // Webhook dupliqué : le call est déjà passé transcribed. On accuse réception
+    // sans relancer l'analyse ni relogger le coût.
+    console.log('[webhook/assemblyai] Call déjà transcribed (webhook dupliqué), on ignore:', call.id)
+    return NextResponse.json({ received: true })
   }
 
   // 6. Logger le coût réel (durée audio AssemblyAI)
