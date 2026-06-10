@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import * as Sentry from '@sentry/nextjs'
+import { env } from '@/lib/env'
 
 // Mapping Price ID Stripe (mode test) → plan en DB.
 // Les Product IDs (prod_…) ne sont pas utilisables ici : Stripe envoie le Price ID
@@ -44,7 +45,10 @@ export async function POST(req: NextRequest) {
   // 1. Lire le body brut — obligatoire pour vérifier la signature Stripe.
   const rawBody = await req.text()
   const signature = req.headers.get('stripe-signature') ?? ''
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? ''
+  // Secret validé au boot (lib/env.ts) : plus de `?? ''` qui faisait rejeter
+  // silencieusement TOUS les webhooks (donc statut d'abonnement jamais mis à jour)
+  // quand la variable manquait.
+  const webhookSecret = env.STRIPE_WEBHOOK_SECRET
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
 

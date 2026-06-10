@@ -12,6 +12,9 @@ import * as Sentry from "@sentry/nextjs";
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Valide les variables d'env requises AVANT toute requête (fail-fast au boot).
+    // Si une var manque, le module throw ici → le serveur refuse de démarrer.
+    await import("./lib/env");
     await import("./sentry.server.config");
   }
   if (process.env.NEXT_RUNTIME === "edge") {
