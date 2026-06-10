@@ -55,7 +55,9 @@ please ship issue #N directly to main
 - [x] **#14** 🟡 Renseigner `calls.user_id` à l'insert (profils par commercial / ownership deals vides) `reliability`
   - **En clair :** Chaque appel enregistré aurait dû mémoriser *quel commercial* l'a passé. La case prévue pour ça (`user_id`) existait bien dans la base, mais personne ne la remplissait — elle restait toujours vide. Résultat : quand on ouvrait la fiche d'un commercial, elle affichait 0 appel, 0 score moyen, 0 minute ; et sur la page des deals, chaque affaire affichait « aucun propriétaire ». L'info existait (on savait qui était connecté en lançant l'appel), on oubliait juste de l'écrire.
   - **Ce qu'on a fait :** On a fait passer l'identité du commercial du début à la fin de la chaîne. (1) Le simulateur d'appel attribue maintenant l'appel à la personne connectée qui le déclenche. (2) Le « formulaire » qui valide les appels entrants accepte désormais ce champ (et refuse une valeur mal formée). (3) Au moment d'enregistrer l'appel, on inscrit le commercial quand on le connaît. Du coup la fiche commercial et le propriétaire des deals s'affichent enfin. Pour un *vrai* appel Ringover, on laisse la case vide pour l'instant : relier l'agent Ringover à un membre de l'équipe est un chantier séparé, noté en commentaire. Aucune base de données modifiée, aucune nouvelle clé à configurer.
-- [ ] **#16** 🟡 Ajouter du rate limiting sur les Server Actions login/signup `security`
+- [x] **#16** 🟡 Ajouter du rate limiting sur les Server Actions login/signup `security`
+  - **En clair :** Les deux portes d'entrée du compte — la connexion et la création de compte — n'avaient aucun « videur » pour limiter le nombre d'essais, alors que toutes les autres entrées de l'app en avaient déjà un. Conséquence : quelqu'un pouvait (1) tenter des milliers de mots de passe à la suite sur une adresse email pour la pirater, ou (2) spammer le formulaire d'inscription pour créer des centaines de faux comptes — chacun gonflant la base de données et déclenchant un email de confirmation (coût + risque pour notre réputation d'expéditeur).
+  - **Ce qu'on a fait :** On a posé un compteur d'essais sur ces deux portes : **5 tentatives maximum par minute** depuis une même connexion internet. À la 6e, la personne est refoulée avec un message clair (« Trop de tentatives. Réessayez dans une minute. ») et reste sur le bon formulaire. C'est le même mécanisme qui protège déjà le reste de l'app, juste réglé plus serré ici. En développement (sur ton ordi, sans le service de comptage branché), tout marche normalement sans limite — la protection ne s'active qu'en ligne. Aucune base de données touchée, aucune nouvelle clé à configurer.
 - [ ] **#17** 🟡 Cadenasser le simulateur d'appel DEV-ONLY hors production `ops` `security`
 - [ ] **#19** 🟡 Validation fail-fast des variables d'env au démarrage `ops`
 - [ ] **#20** 🟡 Plafonds de dépense IA + alerting `ops`
@@ -88,7 +90,7 @@ Issues administratives / légales / RGPD parquées sur décision du founder (202
 ---
 
 ## Progression
-- **16 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **13** actives restantes.
-- **Prochaine issue : #16** → nouvelle session → `please ship issue #16 directly to main`
+- **17 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **12** actives restantes.
+- **Prochaine issue : #17** → nouvelle session → `please ship issue #17 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
