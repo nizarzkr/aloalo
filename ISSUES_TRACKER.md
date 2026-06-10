@@ -52,7 +52,9 @@ please ship issue #N directly to main
 - [x] **#13** 🟡 Remonter les échecs de transcription : error_message, alerte Sentry, retry `reliability`
   - **En clair :** Quand la transcription d'un appel plantait, l'appel virait au rouge « Échec »… mais sans dire pourquoi, sans nous prévenir, et sans aucun moyen de réessayer. L'appel (payé) était silencieusement perdu, et nous (l'équipe) n'étions jamais alertés. Bizarrement, l'étape *suivante* (l'analyse par l'IA) faisait déjà tout ça bien — c'est juste l'étape transcription qu'on avait oublié de soigner.
   - **Ce qu'on a fait :** Trois choses. (1) On enregistre désormais une **raison lisible** de l'échec (« audio illisible », « audio introuvable », etc.) qui s'affiche directement sur la page de l'appel. (2) Chaque échec déclenche une **alerte automatique** vers notre outil de surveillance (Sentry), donc on est prévenu en temps réel. (3) On a ajouté un bouton **« Relancer la transcription »** sur les appels échoués : un clic remet l'appel en file d'attente et retente le tout — l'écran d'avancement reprend la main. Aucune base de données touchée, aucune nouvelle clé à configurer.
-- [ ] **#14** 🟡 Renseigner `calls.user_id` à l'insert (profils par commercial / ownership deals vides) `reliability`
+- [x] **#14** 🟡 Renseigner `calls.user_id` à l'insert (profils par commercial / ownership deals vides) `reliability`
+  - **En clair :** Chaque appel enregistré aurait dû mémoriser *quel commercial* l'a passé. La case prévue pour ça (`user_id`) existait bien dans la base, mais personne ne la remplissait — elle restait toujours vide. Résultat : quand on ouvrait la fiche d'un commercial, elle affichait 0 appel, 0 score moyen, 0 minute ; et sur la page des deals, chaque affaire affichait « aucun propriétaire ». L'info existait (on savait qui était connecté en lançant l'appel), on oubliait juste de l'écrire.
+  - **Ce qu'on a fait :** On a fait passer l'identité du commercial du début à la fin de la chaîne. (1) Le simulateur d'appel attribue maintenant l'appel à la personne connectée qui le déclenche. (2) Le « formulaire » qui valide les appels entrants accepte désormais ce champ (et refuse une valeur mal formée). (3) Au moment d'enregistrer l'appel, on inscrit le commercial quand on le connaît. Du coup la fiche commercial et le propriétaire des deals s'affichent enfin. Pour un *vrai* appel Ringover, on laisse la case vide pour l'instant : relier l'agent Ringover à un membre de l'équipe est un chantier séparé, noté en commentaire. Aucune base de données modifiée, aucune nouvelle clé à configurer.
 - [ ] **#16** 🟡 Ajouter du rate limiting sur les Server Actions login/signup `security`
 - [ ] **#17** 🟡 Cadenasser le simulateur d'appel DEV-ONLY hors production `ops` `security`
 - [ ] **#19** 🟡 Validation fail-fast des variables d'env au démarrage `ops`
@@ -86,7 +88,7 @@ Issues administratives / légales / RGPD parquées sur décision du founder (202
 ---
 
 ## Progression
-- **15 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **14** actives restantes.
-- **Prochaine issue : #14** → nouvelle session → `please ship issue #14 directly to main`
+- **16 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **13** actives restantes.
+- **Prochaine issue : #16** → nouvelle session → `please ship issue #16 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
