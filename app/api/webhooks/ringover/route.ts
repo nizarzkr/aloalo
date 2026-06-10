@@ -13,15 +13,24 @@ import {
 import { RingoverWebhookSchema } from '@/lib/validations'
 
 function verifySignature(body: string, signature: string, secret: string): boolean {
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(body)
-    .digest('hex')
-  // timingSafeEqual pour éviter les attaques par timing
-  return crypto.timingSafeEqual(
-    Buffer.from(expected),
-    Buffer.from(signature)
-  )
+  // Fail closed : pas de secret configuré → on refuse tout (jamais d'open door).
+  if (!secret) return false
+  try {
+    const expected = crypto
+      .createHmac('sha256', secret)
+      .update(body)
+      .digest('hex')
+    const expectedBuf = Buffer.from(expected, 'hex')
+    const providedBuf = Buffer.from(signature, 'hex')
+    // timingSafeEqual jette un RangeError sur des longueurs différentes : on
+    // compare d'abord la longueur pour ne jamais lever (sinon → 500 → Ringover
+    // retente une requête qui aurait dû être rejetée en 401).
+    if (expectedBuf.length !== providedBuf.length) return false
+    return crypto.timingSafeEqual(expectedBuf, providedBuf)
+  } catch {
+    // Signature malformée (hex invalide, etc.) → rejet propre (401), pas un 500.
+    return false
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -70,7 +79,6 @@ export async function POST(req: NextRequest) {
 
   // 5. Extraire les infos de l'appel (déjà validées par Zod)
   const call = payload.call
-  const organizationId = payload.organization_id
 
   // 6. Détecter le mode simulation
   //    Le simulate-call injecte _sim_transcript dans l'objet call du payload
@@ -90,11 +98,41 @@ export async function POST(req: NextRequest) {
       }
     : null
 
-  // 7. Insérer en base avec le client admin (bypass RLS)
+  // 7. Client admin (bypass RLS) — nécessaire dès maintenant pour dériver l'org
+  //    d'un appel réel (pas de JWT user sur un webhook), puis pour l'insert.
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SECRET_KEY!
   )
+
+  // 7bis. Dériver l'org de façon sûre.
+  //   - Simulé : le simulateur est déjà authentifié (session dashboard) et
+  //     fournit l'org_id de l'utilisateur connecté → on le garde.
+  //   - Réel : on IGNORE le organization_id du body (non lié au signataire :
+  //     qui détient le secret global pourrait écrire dans n'importe quelle org)
+  //     et on dérive le tenant à partir de l'identifiant de compte Ringover de
+  //     l'événement signé. Champ source (account_id) à confirmer au branchement
+  //     réel de l'API Ringover (cf. migration 0021).
+  let organizationId: string
+  if (simTranscript) {
+    organizationId = payload.organization_id
+  } else {
+    const ringoverAccountId = call.account_id ?? null
+    if (!ringoverAccountId) {
+      console.error('[webhook/ringover] call.account_id absent — org non dérivable')
+      return NextResponse.json({ error: 'Unmapped Ringover account' }, { status: 422 })
+    }
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('ringover_account_id', ringoverAccountId)
+      .single()
+    if (!org) {
+      console.error('[webhook/ringover] Compte Ringover non rattaché à une org:', ringoverAccountId)
+      return NextResponse.json({ error: 'Unmapped Ringover account' }, { status: 422 })
+    }
+    organizationId = org.id
+  }
 
   // Identité CRM pré-câblée par le simulateur (démo / multi-contacts) : on la
   // persiste telle quelle. Un `deal_id` commun regroupe plusieurs appels (et
@@ -109,24 +147,39 @@ export async function POST(req: NextRequest) {
       }
     : null
 
+  // Idempotence (issue #8) : un retry/replay signé du même call.ended réel ne
+  // doit pas créer de doublon ni re-déclencher une transcription payante. On
+  // upsert sur (organization_id, provider_call_id) en ignorant les conflits.
+  // L'index unique est partiel (where provider <> 'simulated') → les appels
+  // simulés gardent leur comportement « toujours insérer » (ids non uniques).
   const { data: insertedCall, error } = await supabase
     .from('calls')
-    .insert({
-      organization_id: organizationId,
-      provider: simTranscript ? 'simulated' : 'ringover',
-      provider_call_id: call.id as string,
-      callee_number: call.to_number as string,
-      duration_seconds: call.duration as number,
-      audio_url: (call.recording_url as string) ?? null,
-      status: 'pending',
-      started_at: call.started_at as string,
-      ...(simIdentity?.contact_name ? { contact_name: simIdentity.contact_name } : {}),
-      ...(simIdentity?.company_name ? { company_name: simIdentity.company_name } : {}),
-      ...(simIdentity?.deal_name ? { deal_name: simIdentity.deal_name } : {}),
-      ...(simIdentity?.deal_id ? { deal_id: simIdentity.deal_id } : {}),
-    })
+    .upsert(
+      {
+        organization_id: organizationId,
+        provider: simTranscript ? 'simulated' : 'ringover',
+        provider_call_id: call.id as string,
+        callee_number: call.to_number as string,
+        duration_seconds: call.duration as number,
+        audio_url: (call.recording_url as string) ?? null,
+        status: 'pending',
+        started_at: call.started_at as string,
+        ...(simIdentity?.contact_name ? { contact_name: simIdentity.contact_name } : {}),
+        ...(simIdentity?.company_name ? { company_name: simIdentity.company_name } : {}),
+        ...(simIdentity?.deal_name ? { deal_name: simIdentity.deal_name } : {}),
+        ...(simIdentity?.deal_id ? { deal_id: simIdentity.deal_id } : {}),
+      },
+      { onConflict: 'organization_id,provider_call_id', ignoreDuplicates: true },
+    )
     .select('id')
-    .single()
+    .maybeSingle()
+
+  // Conflit (replay) → ignoreDuplicates renvoie 0 ligne sans erreur : on s'arrête
+  // AVANT de re-déclencher la transcription.
+  if (!error && !insertedCall) {
+    console.log('[webhook/ringover] Replay ignoré pour', call.id)
+    return NextResponse.json({ received: true, duplicate: true })
+  }
 
   if (error || !insertedCall) {
     console.error('[webhook/ringover] Erreur insertion:', error)

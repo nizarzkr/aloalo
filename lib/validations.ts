@@ -191,6 +191,10 @@ export const RingoverWebhookSchema = z
     call: z
       .object({
         id: z.string().min(1, 'call.id requis'),
+        // Identifiant du compte Ringover (appel réel) : sert à dériver l'org
+        // côté serveur sans faire confiance au organization_id du body (issue #8).
+        // Absent en simulation (le simulateur fournit l'org via la session).
+        account_id: z.string().optional(),
         to_number: z.string().optional(),
         duration: z.number().nonnegative().optional(),
         recording_url: z.string().url().nullable().optional(),
