@@ -61,7 +61,9 @@ please ship issue #N directly to main
 - [x] **#17** 🟡 Cadenasser le simulateur d'appel DEV-ONLY hors production `ops` `security`
   - **En clair :** On avait un outil de test interne (un « simulateur d'appel ») qui fabrique de faux appels pour découvrir la plateforme sans avoir branché Ringover. Problème : cet outil partait en ligne avec le reste de l'appli, visible par les vrais clients. Pire, la page d'accueil des appels (quand on n'en a encore aucun) affichait un gros bouton « Simuler un appel » qui menait vers une page estampillée « DEV ONLY ». Conséquences : un client pouvait remplir ses propres statistiques de faux appels, et chaque clic déclenchait pour de vrai la transcription + l'analyse IA — donc des frais réels à chaque fois.
   - **Ce qu'on a fait :** On a posé un interrupteur d'environnement. L'outil reste pleinement actif sur ton ordi et sur les versions de test (« preview »), mais devient **totalement invisible en production** : la page renvoie une erreur 404 (page introuvable) et la « porte » technique qui crée les faux appels refuse net toute demande, avant même de dépenser quoi que ce soit. On a aussi retiré le bouton « Simuler un appel » de l'écran des vrais clients et reformulé le message d'accueil. Un interrupteur de secours existe (`ALLOW_DEV_SIMULATE`) pour rallumer l'outil le temps d'une démo ponctuelle, mais il reste éteint par défaut. Aucune base de données touchée, aucune nouvelle clé obligatoire à configurer.
-- [ ] **#19** 🟡 Validation fail-fast des variables d'env au démarrage `ops`
+- [x] **#19** 🟡 Validation fail-fast des variables d'env au démarrage `ops`
+  - **En clair :** Notre app a besoin d'une douzaine de « clés » secrètes pour fonctionner (accès à la base de données, à l'IA, au paiement Stripe, etc.), rangées dans le coffre de Vercel. Jusqu'ici, si tu en oubliais une ou faisais une faute de frappe, l'app se mettait en ligne quand même « au vert »… puis cassait en silence plus tard : un paiement qui ne s'enregistre pas, une analyse d'appel qui plante, une protection anti-abus qui s'éteint — sans aucune alerte, jusqu'à ce qu'un client râle.
+  - **Ce qu'on a fait :** On a posé un contrôle d'identité à l'allumage. Au démarrage du serveur, l'app vérifie d'un coup que toutes les clés indispensables sont bien là. S'il en manque, elle **refuse net de démarrer** et affiche un message qui **nomme précisément** la/les clé(s) manquante(s) — fini le déploiement « vert » mais cassé. Au passage, on a réparé un défaut sur les paiements : le webhook Stripe se taisait quand son secret manquait (donc les changements d'abonnement ne s'enregistraient jamais) ; désormais cette clé fait partie des indispensables vérifiées au démarrage. La construction de l'app et les vérifications automatiques (CI) continuent de tourner sans secrets, comme avant. Aucune base de données touchée, aucune nouvelle clé à configurer (on ne fait que rendre obligatoires celles déjà documentées).
 - [ ] **#20** 🟡 Plafonds de dépense IA + alerting `ops`
 
 ### Low
@@ -92,7 +94,7 @@ Issues administratives / légales / RGPD parquées sur décision du founder (202
 ---
 
 ## Progression
-- **18 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **11** actives restantes.
-- **Prochaine issue : #19** → nouvelle session → `please ship issue #19 directly to main`
+- **19 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **10** actives restantes.
+- **Prochaine issue : #20** → nouvelle session → `please ship issue #20 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
