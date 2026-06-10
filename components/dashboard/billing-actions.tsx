@@ -28,12 +28,24 @@ export function PlanActionButton({
   planName,
   isCurrent,
   hasActiveSubscription,
+  isOwner,
 }: {
   priceId: string;
   planName: string;
   isCurrent: boolean;
   hasActiveSubscription: boolean;
+  isOwner: boolean;
 }) {
+  // Défense en profondeur : un non-owner ne peut pas déclencher checkout /
+  // change-plan (le serveur renvoie 403 de toute façon). On désactive le bouton.
+  if (!isOwner) {
+    return (
+      <Button type="button" variant="outline" disabled className="w-full">
+        Réservé au propriétaire
+      </Button>
+    );
+  }
+
   if (isCurrent) {
     return (
       <Button type="button" variant="outline" disabled className="w-full">

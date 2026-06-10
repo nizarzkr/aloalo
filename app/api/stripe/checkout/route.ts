@@ -53,12 +53,16 @@ export async function POST(req: NextRequest) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("organization_id, email")
+    .select("organization_id, email, role")
     .eq("id", user.id)
     .single();
 
   if (!profile?.organization_id) {
     return NextResponse.json({ error: "No organization" }, { status: 400 });
+  }
+  // Seul l'owner peut souscrire un abonnement payant pour l'org.
+  if (profile.role !== "owner") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { data: org } = await supabase

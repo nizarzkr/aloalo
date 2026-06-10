@@ -162,9 +162,13 @@ export default async function BillingPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("organization_id")
+    .select("organization_id, role")
     .eq("id", user.id)
     .single();
+
+  // Défense en profondeur UI : seul l'owner pilote la facturation. Le vrai
+  // contrôle est côté serveur (403 dans les routes /api/stripe/*).
+  const isOwner = profile?.role === "owner";
 
   if (!profile?.organization_id) {
     return (
@@ -232,7 +236,7 @@ export default async function BillingPage({
             Gérez votre abonnement et changez de plan à tout moment.
           </p>
         </div>
-        {showPortal ? <PortalButton /> : null}
+        {showPortal && isOwner ? <PortalButton /> : null}
       </div>
 
       {success === "true" ? <BillingSuccessBanner /> : null}
@@ -312,6 +316,12 @@ export default async function BillingPage({
         Choisir un plan
       </h3>
 
+      {!isOwner ? (
+        <p className="mb-4 text-sm text-muted-foreground">
+          Seul le propriétaire du compte peut gérer la facturation.
+        </p>
+      ) : null}
+
       <div className="grid gap-4 md:grid-cols-3">
         {PLANS.map((plan) => {
           const isCurrent = currentPlanForButton === plan.key;
@@ -356,6 +366,7 @@ export default async function BillingPage({
                   planName={plan.name}
                   isCurrent={isCurrent}
                   hasActiveSubscription={hasActiveSubscription}
+                  isOwner={isOwner}
                 />
               </CardContent>
             </Card>
