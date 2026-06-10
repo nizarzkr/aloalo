@@ -64,7 +64,9 @@ please ship issue #N directly to main
 - [x] **#19** 🟡 Validation fail-fast des variables d'env au démarrage `ops`
   - **En clair :** Notre app a besoin d'une douzaine de « clés » secrètes pour fonctionner (accès à la base de données, à l'IA, au paiement Stripe, etc.), rangées dans le coffre de Vercel. Jusqu'ici, si tu en oubliais une ou faisais une faute de frappe, l'app se mettait en ligne quand même « au vert »… puis cassait en silence plus tard : un paiement qui ne s'enregistre pas, une analyse d'appel qui plante, une protection anti-abus qui s'éteint — sans aucune alerte, jusqu'à ce qu'un client râle.
   - **Ce qu'on a fait :** On a posé un contrôle d'identité à l'allumage. Au démarrage du serveur, l'app vérifie d'un coup que toutes les clés indispensables sont bien là. S'il en manque, elle **refuse net de démarrer** et affiche un message qui **nomme précisément** la/les clé(s) manquante(s) — fini le déploiement « vert » mais cassé. Au passage, on a réparé un défaut sur les paiements : le webhook Stripe se taisait quand son secret manquait (donc les changements d'abonnement ne s'enregistraient jamais) ; désormais cette clé fait partie des indispensables vérifiées au démarrage. La construction de l'app et les vérifications automatiques (CI) continuent de tourner sans secrets, comme avant. Aucune base de données touchée, aucune nouvelle clé à configurer (on ne fait que rendre obligatoires celles déjà documentées).
-- [ ] **#20** 🟡 Plafonds de dépense IA + alerting `ops`
+- [x] **#20** 🟡 Plafonds de dépense IA + alerting `ops`
+  - **En clair :** Chaque transcription d'appel et chaque analyse IA coûte un peu d'argent (on paie AssemblyAI et Anthropic à l'usage), et on notait déjà ce coût estimé dans la base… mais personne ne le relisait jamais. Conséquence : si un bug, un abus ou un pic de trafic déclenchait des milliers d'opérations, la facture grimpait **sans aucun frein et sans aucune alerte** — tu ne l'aurais découvert que sur le relevé du mois.
+  - **Ce qu'on a fait :** Deux remparts. (1) **Le vrai frein** (zéro code) : poser un plafond mensuel DUR de **50 €/mois** directement dans les tableaux de bord Anthropic et AssemblyAI — c'est la seule barrière qui stoppe réellement la dépense (le code ne peut qu'*estimer* les coûts, pas les garantir). On l'a documenté dans `AGENTS.md` pour que ça ne se perde pas. **⚠️ action de ton côté :** régler ces deux plafonds sur les sites des fournisseurs. (2) **Une alerte précoce** : un petit robot quotidien (Edge Function Supabase `spend-alert`) qui additionne la dépense du jour et, si elle dépasse **10 €/jour**, t'envoie un **email d'alerte** — pour réagir *avant* que le plafond dur ne coupe le service. Le robot ne fait que LIRE la base (jamais écrire), et il refuse net toute requête non authentifiée (testé : sans le bon secret → erreur 401, base jamais touchée). **⚠️ action de ton côté :** déployer la fonction et créer le Cron Job quotidien côté Supabase (commandes dans l'en-tête du fichier), puis renseigner `SPEND_ALERT_TO` (ton email). Aucune base de données modifiée, aucune migration.
 
 ### Low
 - [ ] **#25** ⚪ Durcissement auth : validation mot de passe serveur, erreurs génériques, garde open-redirect `security`
@@ -94,7 +96,7 @@ Issues administratives / légales / RGPD parquées sur décision du founder (202
 ---
 
 ## Progression
-- **19 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **10** actives restantes.
-- **Prochaine issue : #20** → nouvelle session → `please ship issue #20 directly to main`
+- **20 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **9** actives restantes.
+- **Prochaine issue : #25** → nouvelle session → `please ship issue #25 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*

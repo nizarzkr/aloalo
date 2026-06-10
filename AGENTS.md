@@ -55,6 +55,21 @@ Nizar — sans compétences techniques. Apprend à piloter une IA qui code en co
 
 ---
 
+## Plafonds de dépense API (backstop financier)
+
+Caps mensuels HARD configurés directement dans les dashboards fournisseurs
+(seule garantie qui stoppe réellement la dépense) :
+- Anthropic : 50 €/mois — Console Anthropic → Billing → Spend limit.
+- AssemblyAI : 50 €/mois — Dashboard AssemblyAI → Billing → Usage cap.
+
+À revoir avant chaque montée de trafic. Le code ne peut PAS garantir le plafond
+(les coûts en DB sont des ESTIMATIONS, cf. `lib/claude.ts` / `lib/assemblyai.ts`).
+Alerte précoce in-app : Edge Function `spend-alert` (issue #20) — somme la dépense
+quotidienne (`usage_logs.cost_eur`) et envoie un email Resend au-delà d'un seuil
+(`SPEND_ALERT_DAILY_EUR`, défaut 10 €/jour).
+
+---
+
 ## Variables d'env (`.env.local`)
 
 ```
@@ -77,8 +92,10 @@ ORG_SECRETS_ENC_KEY=base64(32 octets)               # chiffre au repos les crede
 INTERNAL_PIPELINE_SECRET=hex(32 octets)             # secret partagé interne qui protège /api/transcribe et /api/analyze (routes service key, bypass RLS, appelées QUE par nos webhooks). Vérifie l'en-tête x-aloalo-internal en temps constant — cf. lib/internal-auth.ts (issue #2). FAIL-CLOSED : si absente, les deux routes renvoient 401 → pipeline cassé. SERVER-ONLY / Vercel (Production + Preview + Development). Générer avec `openssl rand -hex 32`.
 AUDIO_URL_ALLOWED_HOSTS=ringover.com                # (optionnel) allowlist anti-SSRF des hôtes autorisés pour calls.audio_url avant envoi à AssemblyAI (issue #2). CSV de suffixes d'hôte, défaut `ringover.com`. À ÉTENDRE avec le vrai domaine d'hébergement des enregistrements Ringover dès qu'on le voit (souvent un CDN/stockage distinct) — sinon la transcription réelle échoue en 422.
 ASSEMBLYAI_WEBHOOK_SECRET=hex(32 octets)            # secret partagé envoyé à AssemblyAI à la création de la transcription (lib/assemblyai.ts), qu'il renvoie sur le webhook /api/webhooks/assemblyai via le header x-assemblyai-webhook-secret (issue #4). Le handler le vérifie en temps constant. FAIL-CLOSED : si absent, requestTranscription throw ET le webhook renvoie 401 → pipeline cassé. SERVER-ONLY / Vercel (même valeur sur tous les environnements pointant vers ce compte AssemblyAI). Générer avec `openssl rand -hex 32`.
-CRON_SECRET=hex(32 octets)                          # secret des jobs planifiés. (1) Vercel Cron : envoyé en `Authorization: Bearer <CRON_SECRET>` à /api/cron/sweep-stuck-calls (filet de sécurité des appels coincés en transcribing, issue #12). FAIL-CLOSED : si absent, la route renvoie 401 → le sweeper ne tourne pas. (2) Edge function Supabase delete-old-audio (purge audio RGPD) qui l'emploie déjà. SERVER-ONLY. À configurer sur Vercel (tous environnements) ET côté Supabase ; idéalement la même valeur. Générer avec `openssl rand -hex 32`.
+CRON_SECRET=hex(32 octets)                          # secret des jobs planifiés. (1) Vercel Cron : envoyé en `Authorization: Bearer <CRON_SECRET>` à /api/cron/sweep-stuck-calls (filet de sécurité des appels coincés en transcribing, issue #12). FAIL-CLOSED : si absent, la route renvoie 401 → le sweeper ne tourne pas. (2) Edge functions Supabase delete-old-audio (purge audio RGPD) ET spend-alert (alerte de dépense IA, issue #20) qui l'emploient déjà. SERVER-ONLY. À configurer sur Vercel (tous environnements) ET côté Supabase ; idéalement la même valeur. Générer avec `openssl rand -hex 32`.
 ALLOW_DEV_SIMULATE=1                                 # (optionnel) flag d'échappement du simulateur d'appels DEV (issue #17). Le simulateur (/dev/test + /api/dev/simulate-call) est actif en local et sur les preview Vercel, mais DÉSACTIVÉ en production (gate sur VERCEL_ENV, cf. lib/dev/is-simulator-enabled.ts). Mettre cette variable à `1` réactive l'outil même en prod, le temps d'une démo ponctuelle. NE JAMAIS l'activer par défaut en production. SERVER-ONLY.
+SPEND_ALERT_DAILY_EUR=10                             # (optionnel) seuil quotidien en € de l'Edge Function spend-alert (issue #20). Au-delà de ce cumul de usage_logs.cost_eur sur le jour UTC, un email d'alerte part via Resend. Défaut 10 si absent/non-numérique. SECRET de la fonction SUPABASE (Edge Functions → Secrets), PAS Vercel.
+SPEND_ALERT_TO=ops@exemple.fr                        # adresse ops qui reçoit l'email d'alerte de dépense (Edge Function spend-alert, issue #20). Si absente, l'alerte est seulement loggée (pas d'email). SECRET de la fonction SUPABASE, PAS Vercel.
 ```
 
 Ajouts prévus : `STRIPE_WEBHOOK_SECRET` (J9), `RINGOVER_WEBHOOK_SECRET` (J3).
