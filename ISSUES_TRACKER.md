@@ -46,7 +46,9 @@ please ship issue #N directly to main
 ## Phase 5 — Tout le reste (medium → low)
 
 ### Medium restantes
-- [ ] **#9** 🟡 Exiger le rôle owner sur les routes de facturation Stripe `security`
+- [x] **#9** 🟡 Exiger le rôle owner sur les routes de facturation Stripe `security`
+  - **En clair :** Jusqu'ici, n'importe qui dans l'équipe — y compris un simple commercial — pouvait, en se connectant, changer le plan de l'entreprise, lancer un abonnement payant, ou carrément annuler l'abonnement depuis l'espace Stripe. Le système vérifiait bien « est-ce un membre de cette entreprise ? » mais jamais « est-ce le patron du compte ? ». Risque : un changement de plan accidentel, des frais surprises, ou une annulation — le tout sur le dos de l'entreprise.
+  - **Ce qu'on a fait :** On a posé un videur à l'entrée des trois portes de facturation : si la personne n'est pas le propriétaire du compte (`owner`), elle est refoulée (erreur 403) **avant même** que la moindre opération Stripe ne parte. C'est le vrai verrou. En complément, on a aussi grisé les boutons côté écran pour un non-propriétaire (il voit la facturation en lecture seule, avec la mention « Réservé au propriétaire ») — une seconde barrière, par prudence. Aucune base de données touchée, aucune nouvelle clé à configurer.
 - [ ] **#13** 🟡 Remonter les échecs de transcription : error_message, alerte Sentry, retry `reliability`
 - [ ] **#14** 🟡 Renseigner `calls.user_id` à l'insert (profils par commercial / ownership deals vides) `reliability`
 - [ ] **#16** 🟡 Ajouter du rate limiting sur les Server Actions login/signup `security`
@@ -82,7 +84,7 @@ Issues administratives / légales / RGPD parquées sur décision du founder (202
 ---
 
 ## Progression
-- **13 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **16** actives restantes.
-- **Prochaine issue : #9** → nouvelle session → `please ship issue #9 directly to main`
+- **14 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **15** actives restantes.
+- **Prochaine issue : #13** → nouvelle session → `please ship issue #13 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
