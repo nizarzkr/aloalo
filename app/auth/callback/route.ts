@@ -10,12 +10,24 @@ import { createClient } from "@/lib/supabase/server";
 //
 // Auto-login : sur succès, l'utilisateur arrive sur /dashboard déjà connecté.
 // Sur échec, retour à /login avec un message d'erreur visible.
+
+// next est contrôlé par l'utilisateur (lien de confirmation). On n'autorise
+// QUE des chemins same-site : doit commencer par "/", mais pas par "//" ni
+// "/\" (URLs protocol-relative interprétées comme externes par le navigateur).
+// Sinon → /dashboard. Évite l'open redirect (CWE-601).
+function safeNext(raw: string | null): string {
+  if (!raw) return "/dashboard";
+  if (!raw.startsWith("/")) return "/dashboard";
+  if (raw.startsWith("//") || raw.startsWith("/\\")) return "/dashboard";
+  return raw;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/dashboard";
+  const next = safeNext(searchParams.get("next"));
 
   const supabase = await createClient();
 

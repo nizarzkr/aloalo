@@ -1,5 +1,6 @@
 "use server";
 
+import * as Sentry from "@sentry/nextjs";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -10,6 +11,15 @@ import {
   getClientKeyFromHeaders,
 } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
+import { LoginSchema, SignupSchema } from "@/lib/validations";
+
+// Messages d'erreur génériques pour l'auth. On ne reflète JAMAIS le message
+// brut de Supabase au navigateur : ça permettrait l'énumération de comptes
+// ("User already registered") et fuite l'état interne. On logge le brut côté
+// serveur (Sentry) pour le debug, et on renvoie un message neutre.
+const GENERIC_SIGNUP_ERROR =
+  "Impossible de créer le compte. Vérifiez vos informations ou réessayez.";
+const GENERIC_LOGIN_ERROR = "Identifiants invalides.";
 
 export async function signup(formData: FormData) {
   // Rate limit auth — freine le spam de signup (chaque signup crée org +
@@ -24,10 +34,19 @@ export async function signup(formData: FormData) {
     );
   }
 
-  const email = String(formData.get("email") ?? "");
-  const password = String(formData.get("password") ?? "");
-  const fullName = String(formData.get("full_name") ?? "");
-  const organizationName = String(formData.get("organization_name") ?? "");
+  // Validation serveur : le client a un minLength=8 contournable au curl.
+  const parsed = SignupSchema.safeParse({
+    email: formData.get("email"),
+    password: formData.get("password"),
+    full_name: formData.get("full_name"),
+    organization_name: formData.get("organization_name"),
+  });
+  if (!parsed.success) {
+    // Premier message zod, déjà en français et sans info sensible.
+    const msg = parsed.error.issues[0]?.message ?? GENERIC_SIGNUP_ERROR;
+    redirect(`/signup?error=${encodeURIComponent(msg)}`);
+  }
+  const { email, password, full_name, organization_name } = parsed.data;
 
   const supabase = await createClient();
 
@@ -41,15 +60,16 @@ export async function signup(formData: FormData) {
     options: {
       // Lus par le trigger handle_new_user pour créer org + profile.
       data: {
-        full_name: fullName,
-        organization_name: organizationName,
+        full_name,
+        organization_name,
       },
       emailRedirectTo: `${baseUrl}/auth/callback`,
     },
   });
 
   if (error) {
-    redirect(`/signup?error=${encodeURIComponent(error.message)}`);
+    Sentry.captureException(error, { tags: { area: "auth", action: "signup" } });
+    redirect(`/signup?error=${encodeURIComponent(GENERIC_SIGNUP_ERROR)}`);
   }
 
   revalidatePath("/", "layout");
@@ -75,15 +95,22 @@ export async function login(formData: FormData) {
     );
   }
 
-  const email = String(formData.get("email") ?? "");
-  const password = String(formData.get("password") ?? "");
+  const parsed = LoginSchema.safeParse({
+    email: formData.get("email"),
+    password: formData.get("password"),
+  });
+  if (!parsed.success) {
+    redirect(`/login?error=${encodeURIComponent(GENERIC_LOGIN_ERROR)}`);
+  }
+  const { email, password } = parsed.data;
 
   const supabase = await createClient();
 
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+    Sentry.captureException(error, { tags: { area: "auth", action: "login" } });
+    redirect(`/login?error=${encodeURIComponent(GENERIC_LOGIN_ERROR)}`);
   }
 
   revalidatePath("/", "layout");

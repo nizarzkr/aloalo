@@ -209,3 +209,42 @@ export const RingoverWebhookSchema = z
   .passthrough()
 
 export type RingoverWebhookInput = z.infer<typeof RingoverWebhookSchema>
+
+// ---------------------------------------------------------------------------
+// SignupSchema / LoginSchema — Server Actions signup & login
+// ---------------------------------------------------------------------------
+// Validation côté serveur des formulaires d'auth. Le client a un minLength=8
+// mais il est contournable (curl/devtools) : on revérifie ici, jamais confiance
+// au navigateur.
+// - email : trim + lowercase + format (comme InvitationSchema).
+// - password (signup) : 8 caractères minimum, garde-fou côté serveur.
+//   Au login on ne valide PAS la longueur du mot de passe (on ne veut pas
+//   révéler la politique ni distinguer les cas) — juste qu'il est non vide.
+export const SignupSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, 'email requis')
+    .max(254, 'email trop long')
+    .email('email invalide'),
+  password: z
+    .string()
+    .min(8, 'mot de passe : 8 caractères minimum')
+    .max(72, 'mot de passe trop long'), // bcrypt tronque au-delà de 72 octets
+  full_name: z.string().trim().min(1, 'nom complet requis').max(120, 'nom trop long'),
+  organization_name: z
+    .string()
+    .trim()
+    .min(1, "nom d'entreprise requis")
+    .max(120, "nom d'entreprise trop long"),
+})
+
+export type SignupInput = z.infer<typeof SignupSchema>
+
+export const LoginSchema = z.object({
+  email: z.string().trim().toLowerCase().min(1, 'email requis').max(254, 'email trop long'),
+  password: z.string().min(1, 'mot de passe requis'),
+})
+
+export type LoginInput = z.infer<typeof LoginSchema>

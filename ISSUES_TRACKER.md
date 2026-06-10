@@ -69,7 +69,9 @@ please ship issue #N directly to main
   - **Ce qu'on a fait :** Deux remparts. (1) **Le vrai frein** (zéro code) : poser un plafond mensuel DUR de **50 €/mois** directement dans les tableaux de bord Anthropic et AssemblyAI — c'est la seule barrière qui stoppe réellement la dépense (le code ne peut qu'*estimer* les coûts, pas les garantir). On l'a documenté dans `AGENTS.md` pour que ça ne se perde pas. **⚠️ action de ton côté :** régler ces deux plafonds sur les sites des fournisseurs. (2) **Une alerte précoce** : un petit robot quotidien (Edge Function Supabase `spend-alert`) qui additionne la dépense du jour et, si elle dépasse **10 €/jour**, t'envoie un **email d'alerte** — pour réagir *avant* que le plafond dur ne coupe le service. Le robot ne fait que LIRE la base (jamais écrire), et il refuse net toute requête non authentifiée (testé : sans le bon secret → erreur 401, base jamais touchée). **⚠️ action de ton côté :** déployer la fonction et créer le Cron Job quotidien côté Supabase (commandes dans l'en-tête du fichier), puis renseigner `SPEND_ALERT_TO` (ton email). Aucune base de données modifiée, aucune migration.
 
 ### Low
-- [ ] **#25** ⚪ Durcissement auth : validation mot de passe serveur, erreurs génériques, garde open-redirect `security`
+- [x] **#25** ⚪ Durcissement auth : validation mot de passe serveur, erreurs génériques, garde open-redirect `security`
+  - **En clair :** Les deux portes d'entrée du compte (création de compte, connexion) avaient trois petits défauts. (1) La règle « mot de passe d'au moins 8 caractères » n'existait que dans le navigateur — un curieux outillé pouvait s'inscrire avec un mot de passe d'un seul caractère en court-circuitant la page. (2) Quand l'inscription ou la connexion échouait, on affichait mot pour mot le message technique de notre prestataire (Supabase) — par exemple « cet email existe déjà » : ça permettait à un inconnu de deviner *qui* a un compte chez nous (utile pour du phishing ciblé). (3) Le lien de confirmation reçu par email acceptait une consigne « ensuite, va à telle adresse » sans la vérifier — un lien piégé pouvait donc rebondir l'utilisateur fraîchement connecté vers un site malveillant.
+  - **Ce qu'on a fait :** Trois verrous, côté serveur (impossible à contourner). (1) On revérifie email + mot de passe à l'arrivée, en réutilisant le même outil de validation que partout ailleurs dans l'app — un mot de passe trop court est refusé *avant* d'atteindre Supabase. (2) On ne renvoie plus jamais le message brut : l'utilisateur voit un message neutre et identique quel que soit l'échec (« Identifiants invalides. »), pendant que le vrai détail part discrètement dans notre outil de surveillance (Sentry) pour le débogage. Plus moyen de deviner qui a un compte. (3) Le lien de confirmation n'accepte plus qu'une destination *interne* à notre propre site ; toute adresse externe est ignorée et renvoie sagement au tableau de bord. Aucune base de données touchée, aucune nouvelle clé à configurer.
 - [ ] **#26** ⚪ RLS defense-in-depth : FORCE RLS, privilèges colonnes, CHECK, test de régression `security`
 - [ ] **#27** ⚪ Durcissement observabilité : scrub PII Sentry + région EU, error-boundary, warnings env `ops`
 - [ ] **#28** ⚪ Défense anti prompt-injection + assainir la sortie IA écrite vers HubSpot `security`
@@ -96,7 +98,7 @@ Issues administratives / légales / RGPD parquées sur décision du founder (202
 ---
 
 ## Progression
-- **20 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **9** actives restantes.
-- **Prochaine issue : #25** → nouvelle session → `please ship issue #25 directly to main`
+- **21 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **8** actives restantes.
+- **Prochaine issue : #26** → nouvelle session → `please ship issue #26 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
