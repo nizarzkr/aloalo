@@ -38,6 +38,7 @@ Nizar — sans compétences techniques. Apprend à piloter une IA qui code en co
 - **Pas de `src/`** — convention plate. `app/`, `lib/`, `components/` à la racine.
 - **Alias `@/*` pointe sur `./*`** (cf. `tsconfig.json`). Ex : `@/lib/supabase/server`.
 - **Migrations SQL** dans `supabase/migrations/NNNN_description.sql` (numérotées).
+  - **Jamais de changement de schéma `public.*` dans la console Supabase sans migration numérotée correspondante.** Les migrations sont l'unique source de vérité du schéma et doivent pouvoir reconstruire la prod à l'identique. Un edit console hors migration crée une dérive silencieuse (cf. issue #6 : `callee_number`/`provider_call_id` ajoutés à la main → DB reconstruite depuis les migrations incapable de faire tourner le pipeline).
 - **Composants UI** : shadcn dans `components/ui/`. Ajouter via `npx shadcn@latest add <component>`.
 - **Code en anglais**, **libellés UI en français**.
 - **Server Actions privilégiées** sur les API Routes pour les formulaires.

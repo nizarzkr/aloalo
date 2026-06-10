@@ -26,7 +26,7 @@ please ship issue #N directly to main
 - [x] **#15** 🟡 Le rate limiter doit « fail closed » (ou alerter) en prod si Upstash absent `ops` `security`
 
 ## Phase 3 — Intégrité des données & fiabilité
-- [ ] **#6** 🟠 Réconcilier le schéma `calls` : migrations manquantes callee_number / provider_call_id `reliability`
+- [x] **#6** 🟠 Réconcilier le schéma `calls` : migrations manquantes callee_number / provider_call_id `reliability`
 - [ ] **#8** 🟡 Durcir le webhook Ringover : binding org, idempotence, signature `security` `reliability`
 - [ ] **#10** 🟡 Envelopper les triggers du pipeline dans `after()` (survie au gel serverless) `reliability`
 - [ ] **#11** 🟡 Rendre les transitions de statut atomiques (compare-and-set) — stop double facturation `reliability`
@@ -66,7 +66,7 @@ please ship issue #N directly to main
 ---
 
 ## Progression
-- **6 / 34** issues fermées.
-- **Prochaine issue : #6** → nouvelle session → `please ship issue #6 directly to main`
+- **7 / 34** issues fermées.
+- **Prochaine issue : #8** → nouvelle session → `please ship issue #8 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
