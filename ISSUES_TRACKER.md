@@ -35,9 +35,6 @@ please ship issue #N directly to main
   - **Ce qu'on a fait :** On a ajouté un petit gardien automatique qui passe toutes les 5 minutes. Il repère les appels coincés depuis plus de 15 min, tente une dernière fois de récupérer la transcription, et s'il n'y arrive pas, marque l'appel comme « échoué » avec une explication. Résultat : plus d'appel bloqué à l'infini. (⚠️ action de ton côté : ajouter la variable `CRON_SECRET` dans Vercel.)
 
 ## Phase 4 — Vie privée / légal & ops
-- [ ] **#22** 🟡 Remplir les placeholders légaux (mentions légales + responsable de traitement) `gdpr` `docs`
-- [ ] **#21** 🟡 Implémenter et PLANIFIER les jobs RGPD de rétention & effacement `gdpr` `reliability`
-- [ ] **#23** 🟡 Capturer l'attestation de consentement à l'enregistrement (owner de l'org) `gdpr`
 - [ ] **#7** 🟠 Bump Next.js 16.2.4 → 16.2.7 (clore les advisories HIGH) `dependencies` `security`
 - [ ] **#18** 🟡 Ajouter un workflow CI + protection de branche sur `main` `ops`
 
@@ -51,7 +48,6 @@ please ship issue #N directly to main
 - [ ] **#17** 🟡 Cadenasser le simulateur d'appel DEV-ONLY hors production `ops` `security`
 - [ ] **#19** 🟡 Validation fail-fast des variables d'env au démarrage `ops`
 - [ ] **#20** 🟡 Plafonds de dépense IA + alerting `ops`
-- [ ] **#24** 🟡 Export d'accès/portabilité des données (RGPD Art. 15/20) `gdpr`
 
 ### Low
 - [ ] **#25** ⚪ Durcissement auth : validation mot de passe serveur, erreurs génériques, garde open-redirect `security`
@@ -63,12 +59,25 @@ please ship issue #N directly to main
 - [ ] **#31** ⚪ Garde de cycle de vie sur le polling statut/activité (cap, backoff, pause visibilité) `reliability`
 - [ ] **#32** ⚪ Hygiène des dépendances : override uuid, pin deps carte HubSpot + lockfile, pin Stripe apiVersion `dependencies`
 - [ ] **#33** ⚪ Docs : réécrire README, corriger noms de secrets RUNBOOK, runbook backup/restore `docs`
-- [ ] **#34** ⚪ Durcir le cron delete-old-audio + corriger l'edge case orphan-org `reliability` `gdpr`
+
+---
+
+## ⏸️ Reporté — à traiter à l'ouverture commerciale (1ers clients payants)
+
+Issues administratives / légales / RGPD parquées sur décision du founder (2026-06-10) : non urgentes tant qu'on est en phase MVP (démos + POC gratuits). À ressortir avant l'ouverture commerciale.
+
+> ⚠️ **Nuance RGPD :** le RGPD ne se déclenche pas au paiement mais dès qu'on traite des données personnelles réelles. Avant le **premier POC avec de vrais enregistrements d'appels**, décider consciemment de **#23** et **#21** — quitte à les gérer à la main / par écrit dans l'accord de POC plutôt qu'en code.
+
+- [ ] **#22** 🟡 Remplir les placeholders légaux (mentions légales + responsable de traitement) `gdpr` `docs` — bloquée tant que la structure n'est pas immatriculée (pas de SIRET). Cf. commentaire GitHub.
+- [ ] **#21** 🟡 Implémenter et PLANIFIER les jobs RGPD de rétention & effacement `gdpr` `reliability` — la page privacy promet déjà la suppression auto ; gérable à la main en POC.
+- [ ] **#23** 🟡 Capturer l'attestation de consentement à l'enregistrement (owner de l'org) `gdpr` — couvrable par écrit dans l'accord de POC au début.
+- [ ] **#24** 🟡 Export d'accès/portabilité des données (RGPD Art. 15/20) `gdpr` — une demande se traite à la main au début.
+- [ ] **#34** ⚪ Durcir le cron delete-old-audio + corriger l'edge case orphan-org `reliability` `gdpr` — pur durcissement, faible enjeu.
 
 ---
 
 ## Progression
-- **11 / 34** issues fermées.
-- **Prochaine issue : #22** → nouvelle session → `please ship issue #22 directly to main`
+- **11 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **18** actives restantes.
+- **Prochaine issue : #7** → nouvelle session → `please ship issue #7 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
