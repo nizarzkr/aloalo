@@ -61,6 +61,11 @@ export async function uploadAudio(audioUrl: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 export async function requestTranscription(audioUrl: string): Promise<string> {
+  // Secret partagé renvoyé par AssemblyAI sur notre webhook → on le vérifie côté
+  // handler (issue #4). Fail-fast si absent : sans lui, le webhook rejette tout.
+  const webhookSecret = process.env.ASSEMBLYAI_WEBHOOK_SECRET
+  if (!webhookSecret) throw new Error('ASSEMBLYAI_WEBHOOK_SECRET manquante')
+
   const res = await fetch(`${BASE_URL}/v2/transcript`, {
     method: 'POST',
     headers: getHeaders(),
@@ -70,6 +75,9 @@ export async function requestTranscription(audioUrl: string): Promise<string> {
       speaker_labels: true,          // Diarisation : qui parle quand
       speech_model: 'best',          // Universal-2 — meilleure qualité FR
       webhook_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/assemblyai`,
+      // AssemblyAI renverra ce header sur notre webhook → on le vérifie côté handler.
+      webhook_auth_header_name: 'x-assemblyai-webhook-secret',
+      webhook_auth_header_value: webhookSecret,
     }),
   })
 

@@ -12,14 +12,23 @@
  *     webhook_auth_header_value?: string
  *   }
  *
- * Sécurité : AssemblyAI permet de configurer un header d'auth custom.
- * Pour le MVP on vérifie juste que le transcript_id existe chez nous.
- * À renforcer au J13 (rate limiting + validation header).
+ * Sécurité (issue #4) : on mirrore le durcissement du webhook Ringover.
+ *   1. Rate limit par IP AVANT tout travail DB (absorbe un flood au plus tôt).
+ *   2. Vérif d'un header secret partagé (x-assemblyai-webhook-secret) en temps
+ *      constant — AssemblyAI le renvoie car requestTranscription le configure.
+ *   3. Lookup du call par colonne indexée (plus de scan cross-tenant).
  */
 
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { getTranscriptionResult, normalizeSegments, estimateCostEur } from '@/lib/assemblyai'
+import {
+  webhookLimiter,
+  checkRateLimit,
+  getClientKey,
+  rateLimitedResponse,
+} from '@/lib/rate-limit'
 
 function getAdminClient() {
   return createClient(
@@ -28,7 +37,30 @@ function getAdminClient() {
   )
 }
 
+// Comparaison constante-temps du header d'auth envoyé par AssemblyAI.
+// Les Buffers doivent avoir la même longueur pour timingSafeEqual.
+function verifyWebhookSecret(received: string, expected: string): boolean {
+  const a = Buffer.from(received)
+  const b = Buffer.from(expected)
+  if (a.length !== b.length) return false
+  return crypto.timingSafeEqual(a, b)
+}
+
 export async function POST(req: NextRequest) {
+  // Rate limit AVANT tout travail DB — absorbe un flood au plus tôt.
+  const rl = await checkRateLimit(webhookLimiter, getClientKey(req))
+  if (!rl.allowed) {
+    return rateLimitedResponse(rl.retryAfterSeconds)
+  }
+
+  // Auth : AssemblyAI nous renvoie le header configuré à requestTranscription.
+  const expectedSecret = process.env.ASSEMBLYAI_WEBHOOK_SECRET ?? ''
+  const receivedSecret = req.headers.get('x-assemblyai-webhook-secret') ?? ''
+  if (!expectedSecret || !verifyWebhookSecret(receivedSecret, expectedSecret)) {
+    console.error('[webhook/assemblyai] Secret webhook invalide')
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   let payload: { transcript_id?: string; status?: string }
   try {
     payload = await req.json()
@@ -46,24 +78,17 @@ export async function POST(req: NextRequest) {
 
   const supabase = getAdminClient()
 
-  // 1. Retrouver le call associé à ce transcript_id
-  //    On l'a stocké dans transcript_segments (champ jsonb) en attendant la fin
-  const { data: calls, error: fetchError } = await supabase
+  // 1. Retrouver le call via la colonne indexée (plus de scan cross-tenant).
+  const { data: call, error: fetchError } = await supabase
     .from('calls')
-    .select('id, organization_id, duration_seconds, audio_url, transcript_segments')
-    .eq('status', 'transcribing')
+    .select('id, organization_id, duration_seconds, audio_url')
+    .eq('assemblyai_transcript_id', transcript_id)
+    .maybeSingle()
 
   if (fetchError) {
-    console.error('[webhook/assemblyai] Erreur fetch calls:', fetchError)
+    console.error('[webhook/assemblyai] Erreur fetch call:', fetchError)
     return NextResponse.json({ error: 'DB error' }, { status: 500 })
   }
-
-  // Trouver le call qui contient ce transcript_id dans ses segments
-  const call = calls?.find(
-    (c) =>
-      typeof c.transcript_segments === 'object' &&
-      (c.transcript_segments as Record<string, string>)?.assemblyai_transcript_id === transcript_id
-  )
 
   if (!call) {
     // Peut arriver si le call a déjà été traité ou si c'est un webhook fantôme

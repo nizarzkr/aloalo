@@ -218,12 +218,11 @@ export async function POST(req: NextRequest) {
     const transcriptId = await requestTranscription(effectiveAudioUrl)
 
     // AssemblyAI va notifier via webhook quand c'est fini.
-    // On note le transcript_id dans les segments (champ libre jsonb) pour retrouver l'appel.
+    // On stocke le transcript_id dans une colonne dédiée indexée (issue #4) pour
+    // que le webhook retrouve le call sans scanner la table.
     await supabase
       .from('calls')
-      .update({
-        transcript_segments: { assemblyai_transcript_id: transcriptId },
-      })
+      .update({ assemblyai_transcript_id: transcriptId })
       .eq('id', callId)
 
     // Logger coût estimé
