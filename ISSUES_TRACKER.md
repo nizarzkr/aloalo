@@ -29,7 +29,7 @@ please ship issue #N directly to main
 - [x] **#6** 🟠 Réconcilier le schéma `calls` : migrations manquantes callee_number / provider_call_id `reliability`
 - [x] **#8** 🟡 Durcir le webhook Ringover : binding org, idempotence, signature `security` `reliability`
 - [x] **#10** 🟡 Envelopper les triggers du pipeline dans `after()` (survie au gel serverless) `reliability`
-- [ ] **#11** 🟡 Rendre les transitions de statut atomiques (compare-and-set) — stop double facturation `reliability`
+- [x] **#11** 🟡 Rendre les transitions de statut atomiques (compare-and-set) — stop double facturation `reliability`
 - [ ] **#12** 🟡 Ajouter un sweeper pour les appels bloqués en `transcribing` (webhook manqué) `reliability`
 
 ## Phase 4 — Vie privée / légal & ops
@@ -66,7 +66,7 @@ please ship issue #N directly to main
 ---
 
 ## Progression
-- **9 / 34** issues fermées.
-- **Prochaine issue : #11** → nouvelle session → `please ship issue #11 directly to main`
+- **10 / 34** issues fermées.
+- **Prochaine issue : #12** → nouvelle session → `please ship issue #12 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
