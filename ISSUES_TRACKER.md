@@ -35,7 +35,9 @@ please ship issue #N directly to main
   - **Ce qu'on a fait :** On a ajouté un petit gardien automatique qui passe toutes les 5 minutes. Il repère les appels coincés depuis plus de 15 min, tente une dernière fois de récupérer la transcription, et s'il n'y arrive pas, marque l'appel comme « échoué » avec une explication. Résultat : plus d'appel bloqué à l'infini. (⚠️ action de ton côté : ajouter la variable `CRON_SECRET` dans Vercel.)
 
 ## Phase 4 — Vie privée / légal & ops
-- [ ] **#7** 🟠 Bump Next.js 16.2.4 → 16.2.7 (clore les advisories HIGH) `dependencies` `security`
+- [x] **#7** 🟠 Bump Next.js 16.2.4 → 16.2.7 (clore les advisories HIGH) `dependencies` `security`
+  - **En clair :** Next.js est le « moteur » sur lequel tout le site tourne. Ses créateurs ont publié un correctif qui bouche 4 trous de sécurité connus, dont un qui aurait pu laisser une requête atteindre une page protégée (`/dashboard/*`) sans passer le contrôle d'accès. On était une mini-version en retard.
+  - **Ce qu'on a fait :** On a pris la mise à jour gratuite (16.2.4 → 16.2.7, un simple « patch » sans changement de comportement). Les alertes de sécurité HIGH sur le moteur ont disparu, l'app se construit et se vérifie sans erreur. Bonus : on a branché un petit robot (« Dependabot ») qui surveillera chaque semaine et proposera tout seul les prochains correctifs de sécurité — pour ne plus jamais être en retard sans le savoir.
 - [ ] **#18** 🟡 Ajouter un workflow CI + protection de branche sur `main` `ops`
 
 ## Phase 5 — Tout le reste (medium → low)
@@ -77,7 +79,7 @@ Issues administratives / légales / RGPD parquées sur décision du founder (202
 ---
 
 ## Progression
-- **11 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **18** actives restantes.
-- **Prochaine issue : #7** → nouvelle session → `please ship issue #7 directly to main`
+- **12 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **17** actives restantes.
+- **Prochaine issue : #18** → nouvelle session → `please ship issue #18 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*

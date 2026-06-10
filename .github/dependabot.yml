@@ -1,0 +1,8 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Garde npm/Node à jour ; les patches de sécurité remontent en PR auto.
+    open-pull-requests-limit: 5
