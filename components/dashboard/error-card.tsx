@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { useEffect } from "react";
 
@@ -25,10 +26,12 @@ export function ErrorCard({
   title?: string;
   description?: string;
 }) {
-  // Log côté navigateur pour aider au debug en dev.
-  // En prod on enverrait ça à Sentry/Logtail au J11/12.
   useEffect(() => {
+    // Log local pour le debug en dev…
     console.error("[dashboard error boundary]", error);
+    // …et remontée Sentry pour les crashs de rendu côté client (non couverts
+    // par onRequestError, qui ne capture que le serveur). Cf. instrumentation.ts.
+    Sentry.captureException(error);
   }, [error]);
 
   return (

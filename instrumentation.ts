@@ -11,6 +11,17 @@
 import * as Sentry from "@sentry/nextjs";
 
 export async function register() {
+  // Avertit si le monitoring est désactivé en prod (DSN oublié au déploiement) :
+  // sans ça, Sentry no-op silencieusement et on perd toute remontée d'erreurs.
+  if (
+    (process.env.VERCEL_ENV ?? process.env.NODE_ENV) === "production" &&
+    !process.env.NEXT_PUBLIC_SENTRY_DSN
+  ) {
+    console.warn(
+      "[sentry] NEXT_PUBLIC_SENTRY_DSN absent en production — aucune erreur ne sera remontée.",
+    );
+  }
+
   if (process.env.NEXT_RUNTIME === "nodejs") {
     // Valide les variables d'env requises AVANT toute requête (fail-fast au boot).
     // Si une var manque, le module throw ici → le serveur refuse de démarrer.
