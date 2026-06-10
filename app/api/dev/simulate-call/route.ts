@@ -74,6 +74,8 @@ export async function POST(req: NextRequest) {
       duration: transcript.duration_seconds,
       recording_url: null, // Pas d'audio en simulation
       started_at: new Date(Date.now() - transcript.duration_seconds * 1000).toISOString(),
+      // Appel simulé attribué au commercial connecté qui déclenche la simulation.
+      user_id: user.id,
       // On glisse le transcript dans les metadata pour le récupérer au J4
       _sim_transcript: {
         text: transcript.text,

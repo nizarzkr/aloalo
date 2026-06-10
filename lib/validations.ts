@@ -199,6 +199,9 @@ export const RingoverWebhookSchema = z
         duration: z.number().nonnegative().optional(),
         recording_url: z.string().url().nullable().optional(),
         started_at: z.string().min(1).optional(),
+        // Rep propriétaire de l'appel. Renseigné par le simulateur (user connecté).
+        // En appel Ringover réel : null pour l'instant (mapping agent→profile à venir).
+        user_id: z.string().uuid('user_id doit être un uuid').nullable().optional(),
         _sim_transcript: SimTranscriptSchema.nullable().optional(),
       })
       .passthrough(),

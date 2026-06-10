@@ -164,6 +164,10 @@ export async function POST(req: NextRequest) {
         audio_url: (call.recording_url as string) ?? null,
         status: 'pending',
         started_at: call.started_at as string,
+        // Rep propriétaire : fourni par le simulateur (user connecté). Null en
+        // appel Ringover réel tant que le mapping agent→profile n'existe pas
+        // (la colonne est nullable, idx_calls_user_id tolère les NULL).
+        ...(call.user_id ? { user_id: call.user_id } : {}),
         ...(simIdentity?.contact_name ? { contact_name: simIdentity.contact_name } : {}),
         ...(simIdentity?.company_name ? { company_name: simIdentity.company_name } : {}),
         ...(simIdentity?.deal_name ? { deal_name: simIdentity.deal_name } : {}),
