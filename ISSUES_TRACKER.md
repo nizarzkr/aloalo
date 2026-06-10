@@ -58,7 +58,9 @@ please ship issue #N directly to main
 - [x] **#16** 🟡 Ajouter du rate limiting sur les Server Actions login/signup `security`
   - **En clair :** Les deux portes d'entrée du compte — la connexion et la création de compte — n'avaient aucun « videur » pour limiter le nombre d'essais, alors que toutes les autres entrées de l'app en avaient déjà un. Conséquence : quelqu'un pouvait (1) tenter des milliers de mots de passe à la suite sur une adresse email pour la pirater, ou (2) spammer le formulaire d'inscription pour créer des centaines de faux comptes — chacun gonflant la base de données et déclenchant un email de confirmation (coût + risque pour notre réputation d'expéditeur).
   - **Ce qu'on a fait :** On a posé un compteur d'essais sur ces deux portes : **5 tentatives maximum par minute** depuis une même connexion internet. À la 6e, la personne est refoulée avec un message clair (« Trop de tentatives. Réessayez dans une minute. ») et reste sur le bon formulaire. C'est le même mécanisme qui protège déjà le reste de l'app, juste réglé plus serré ici. En développement (sur ton ordi, sans le service de comptage branché), tout marche normalement sans limite — la protection ne s'active qu'en ligne. Aucune base de données touchée, aucune nouvelle clé à configurer.
-- [ ] **#17** 🟡 Cadenasser le simulateur d'appel DEV-ONLY hors production `ops` `security`
+- [x] **#17** 🟡 Cadenasser le simulateur d'appel DEV-ONLY hors production `ops` `security`
+  - **En clair :** On avait un outil de test interne (un « simulateur d'appel ») qui fabrique de faux appels pour découvrir la plateforme sans avoir branché Ringover. Problème : cet outil partait en ligne avec le reste de l'appli, visible par les vrais clients. Pire, la page d'accueil des appels (quand on n'en a encore aucun) affichait un gros bouton « Simuler un appel » qui menait vers une page estampillée « DEV ONLY ». Conséquences : un client pouvait remplir ses propres statistiques de faux appels, et chaque clic déclenchait pour de vrai la transcription + l'analyse IA — donc des frais réels à chaque fois.
+  - **Ce qu'on a fait :** On a posé un interrupteur d'environnement. L'outil reste pleinement actif sur ton ordi et sur les versions de test (« preview »), mais devient **totalement invisible en production** : la page renvoie une erreur 404 (page introuvable) et la « porte » technique qui crée les faux appels refuse net toute demande, avant même de dépenser quoi que ce soit. On a aussi retiré le bouton « Simuler un appel » de l'écran des vrais clients et reformulé le message d'accueil. Un interrupteur de secours existe (`ALLOW_DEV_SIMULATE`) pour rallumer l'outil le temps d'une démo ponctuelle, mais il reste éteint par défaut. Aucune base de données touchée, aucune nouvelle clé obligatoire à configurer.
 - [ ] **#19** 🟡 Validation fail-fast des variables d'env au démarrage `ops`
 - [ ] **#20** 🟡 Plafonds de dépense IA + alerting `ops`
 
@@ -90,7 +92,7 @@ Issues administratives / légales / RGPD parquées sur décision du founder (202
 ---
 
 ## Progression
-- **17 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **12** actives restantes.
-- **Prochaine issue : #17** → nouvelle session → `please ship issue #17 directly to main`
+- **18 / 34** issues fermées · **5** reportées (section ⏸️ ci-dessus) · **11** actives restantes.
+- **Prochaine issue : #19** → nouvelle session → `please ship issue #19 directly to main`
 
 *Source : EPIC #35 — audit pré-PoC du 2026-06-08. Rapport complet dans `AUDIT_REPORT.md` (non committé).*
