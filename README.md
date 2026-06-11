@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Aloalo
 
-## Getting Started
+SaaS d'intelligence commerciale qui se branche via API sur la téléphonie d'entreprise
+(Ringover, Aircall) : transcrit les appels, les analyse via IA, et génère des scores de
+performance et des conseils de coaching automatique.
 
-First, run the development server:
+> **Note framework** — ce dépôt utilise une version modifiée de Next.js (voir l'en-tête
+> d'`AGENTS.md`). Les conventions et APIs peuvent différer de Next.js standard ; lire
+> `node_modules/next/dist/docs/` avant d'écrire du code qui touche au framework.
+
+## Stack
+
+Next.js 16.2.4 (App Router) + React 19.2 + TypeScript + Tailwind v4 + shadcn/ui ·
+Supabase (Postgres + Auth, région **West EU / Paris**) · AssemblyAI (transcription, EU) ·
+Claude Haiku 4.5 (analyse IA) · Stripe (paiement) · Resend (email) · Vercel (hébergement).
+
+## Prérequis
+
+- Node ≥ 20
+- npm
+- Un projet Supabase (région West EU / Paris)
+
+## Démarrage local
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # puis remplir chaque clé (voir .env.example pour le détail de chaque variable)
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Scripts disponibles (cf. `package.json`) :
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run dev      # serveur de développement
+npm run build    # build de production
+npm run start    # sert le build de production
+npm run lint     # ESLint
+npm run test     # tests (vitest)
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Variables d'environnement
 
-## Learn More
+**`.env.example` est la source de vérité** : chaque variable y est documentée (rôle,
+côté serveur/navigateur, comment la générer). Copier ce fichier en `.env.local` et
+renseigner chaque clé.
 
-To learn more about Next.js, take a look at the following resources:
+Règle de sécurité (cf. `AGENTS.md`) :
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Les clés `NEXT_PUBLIC_*` et `*_PUBLISHABLE_KEY` sont **safe côté navigateur**.
+- Toutes les autres (`*_SECRET_KEY`, `ANTHROPIC_API_KEY`, etc.) restent **côté serveur
+  uniquement** (Server Components, Server Actions, Route Handlers).
+- **`.env.local` n'est JAMAIS committé** (couvert par `.gitignore`).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Base de données / migrations
 
-## Deploy on Vercel
+Le schéma est défini par des migrations SQL numérotées dans
+`supabase/migrations/NNNN_description.sql`, **appliquées dans l'ordre**. Elles sont
+l'**unique source de vérité** du schéma `public.*` : jamais de changement de schéma dans
+la console Supabase sans migration numérotée correspondante (sinon dérive silencieuse).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Le prochain numéro libre est déterminé par le fichier existant le plus haut
+(actuellement `0022` → le prochain est **`0023`**).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Procédures de **sauvegarde / restauration / rollback de migration** :
+voir [`supabase/RUNBOOK.md`](supabase/RUNBOOK.md).
+
+## Déploiement Vercel
+
+Le déploiement se fait par push sur `main` → build Vercel automatique.
+
+Régler **chaque variable** de `.env.example` dans Vercel (Settings → Environment
+Variables), scopes **Production + Preview**.
