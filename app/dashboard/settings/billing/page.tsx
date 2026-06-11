@@ -9,8 +9,9 @@
 // refonte des réglages en sous-pages.
 // ============================================================================
 
-import Stripe from "stripe";
 import { redirect } from "next/navigation";
+
+import { getStripe } from "@/lib/stripe";
 
 // Empêche tout cache server-side : on veut toujours l'état Stripe le plus récent
 // (utile au retour du Customer Portal après une annulation par exemple).
@@ -120,7 +121,7 @@ const STATUS_BADGE_CLASS: Record<DbStatus, string> = {
 async function fetchSubscriptionInfo(stripeSubscriptionId: string | null) {
   if (!stripeSubscriptionId) return null;
   try {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+    const stripe = getStripe();
     const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
 
     // current_period_end vit sur l'item depuis l'API Stripe 2024-04+.

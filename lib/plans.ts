@@ -10,8 +10,9 @@
 //    sub Stripe disponible (org en trial non payé, ou erreur API).
 // ============================================================================
 
-import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+
+import { getStripe } from "@/lib/stripe";
 
 export type EffectivePlan = "free" | "starter" | "growth" | "scale";
 
@@ -78,7 +79,7 @@ async function getPeriodStart(
   if (!stripeSubscriptionId) return firstOfMonth;
 
   try {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+    const stripe = getStripe();
     const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
     const periodStartUnix = sub.items.data[0]?.current_period_start;
     if (!periodStartUnix) return firstOfMonth;

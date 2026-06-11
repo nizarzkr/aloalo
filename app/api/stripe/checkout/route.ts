@@ -5,9 +5,9 @@
 // customer Stripe, ouvre une session Checkout en mode subscription.
 // ============================================================================
 
-import Stripe from "stripe";
 import { NextRequest, NextResponse } from "next/server";
 
+import { getStripe } from "@/lib/stripe";
 import { createClient } from "@/lib/supabase/server";
 import {
   apiLimiter,
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
   // 3. Customer Stripe : on réutilise s'il existe, sinon on en crée un nouveau.
   //    Le stripe_customer_id final sera persisté en DB par le webhook
   //    (event checkout.session.completed) — pas besoin d'écrire ici.
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+  const stripe = getStripe();
   let customerId = org.stripe_customer_id;
 
   if (!customerId) {

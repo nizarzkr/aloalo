@@ -42,6 +42,9 @@ Nizar — sans compétences techniques. Apprend à piloter une IA qui code en co
 - **Composants UI** : shadcn dans `components/ui/`. Ajouter via `npx shadcn@latest add <component>`.
 - **Code en anglais**, **libellés UI en français**.
 - **Server Actions privilégiées** sur les API Routes pour les formulaires.
+- **`shadcn` reste dans `dependencies`** (et non `devDependencies`) : `app/globals.css` fait `@import "shadcn/tailwind.css"` au build. Le déplacer en dev casse `next build`.
+- **CI installe avec `npm ci`** (respecte `package-lock.json` pour des builds reproductibles), pas `npm install`.
+- **Client Stripe via `getStripe()`** (`lib/stripe.ts`) — jamais `new Stripe(...)` en direct : la factory épingle l'`apiVersion` pour qu'un `npm update` de `stripe` ne change pas silencieusement le comportement de l'API (cf. issue #32).
 
 ---
 

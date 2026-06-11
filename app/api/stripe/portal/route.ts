@@ -5,9 +5,9 @@
 // L'org doit déjà avoir un stripe_customer_id (sinon il n'y a rien à gérer).
 // ============================================================================
 
-import Stripe from "stripe";
 import { NextRequest, NextResponse } from "next/server";
 
+import { getStripe } from "@/lib/stripe";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(req: NextRequest) {
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+  const stripe = getStripe();
   // Origine de la requête : marche en dev (localhost) et en prod (Vercel).
   const appUrl = req.nextUrl.origin;
 

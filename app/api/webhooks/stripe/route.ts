@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import * as Sentry from '@sentry/nextjs'
 import { env } from '@/lib/env'
+import { getStripe } from '@/lib/stripe'
 
 // Mapping Price ID Stripe (mode test) → plan en DB.
 // Les Product IDs (prod_…) ne sont pas utilisables ici : Stripe envoie le Price ID
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
   // quand la variable manquait.
   const webhookSecret = env.STRIPE_WEBHOOK_SECRET
 
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+  const stripe = getStripe()
 
   // 2. Vérifier la signature. Si invalide → 400.
   let event: Stripe.Event

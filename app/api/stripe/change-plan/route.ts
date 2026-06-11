@@ -7,9 +7,9 @@
 // Stripe gère la facture et le webhook subscription.updated mettra à jour la DB.
 // ============================================================================
 
-import Stripe from "stripe";
 import { NextRequest, NextResponse } from "next/server";
 
+import { getStripe } from "@/lib/stripe";
 import { createClient } from "@/lib/supabase/server";
 
 const ALLOWED_PRICE_IDS = new Set([
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+  const stripe = getStripe();
 
   // 1. Récupérer la subscription pour avoir l'item à remplacer
   const subscription = await stripe.subscriptions.retrieve(
