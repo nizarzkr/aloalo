@@ -291,7 +291,10 @@ export async function POST(req: NextRequest) {
       .from('calls')
       .update({ status: 'failed', error_message: `Claude: ${message}` })
       .eq('id', callId)
-    return NextResponse.json({ error: 'Claude analysis failed', details: message }, { status: 500 })
+    // Réponse générique : le message brut du provider reste côté serveur
+    // (console.error + Sentry + calls.error_message ci-dessus) et n'est jamais
+    // renvoyé au client pour éviter toute fuite de détail interne.
+    return NextResponse.json({ error: 'Claude analysis failed' }, { status: 500 })
   }
 
   // 5. Calculer le coût + insérer l'analyse
