@@ -88,6 +88,26 @@ function capWords(text: string, max: number): string {
   return words.slice(0, max).join(' ') + '…'
 }
 
+// Assainit un texte généré par l'IA avant de l'écrire dans HubSpot (défense en
+// profondeur contre une injection via transcript) : neutralise les caractères de
+// contrôle (qui pourraient casser l'affichage ou masquer du contenu), compacte
+// les espaces, et tronque DUR à `max` caractères. `keepNewlines` préserve les
+// sauts de ligne (\n) pour les notes multi-lignes ; sinon tout l'espace est aplati.
+function sanitizeForHubspot(text: string, max: number, keepNewlines = false): string {
+  if (!text) return ''
+  // Plage des caractères de contrôle ASCII (+ DEL). Si on garde les sauts de
+  // ligne, on épargne \n (\u000A) ; sinon on retire toute la plage.
+  const ctrl = keepNewlines
+    ? /[\u0000-\u0009\u000B-\u001F\u007F]/g
+    : /[\u0000-\u001F\u007F]/g
+  let out = text.replace(ctrl, ' ')
+  out = keepNewlines
+    ? out.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n')
+    : out.replace(/\s+/g, ' ')
+  out = out.trim()
+  return out.length > max ? out.slice(0, max - 1).trimEnd() + '…' : out
+}
+
 /**
  * Convertit une date IA (AAAA-MM-JJ) en timestamp ms pour l'échéance HubSpot.
  * Garde-fous : date illisible OU dans le passé → repli à J+2. L'IA peut se
@@ -398,7 +418,8 @@ export async function POST(req: NextRequest) {
           try {
             const noteId = await createNote(
               target,
-              buildNoteSummary(analysis),
+              // Assainie + cap dur caractères avant écriture CRM (issue #28).
+              sanitizeForHubspot(buildNoteSummary(analysis), 4000, true),
               hubspotToken,
             )
             if (noteId) sync.note_id = noteId
@@ -415,7 +436,11 @@ export async function POST(req: NextRequest) {
               ? aiTasks
               : [
                   {
-                    title: `Relancer ${contact.firstname ?? contactName ?? 'le prospect'} suite à l'appel`,
+                    // Le nom vient de HubSpot : on cappe aussi, par cohérence (issue #28).
+                    title: sanitizeForHubspot(
+                      `Relancer ${contact.firstname ?? contactName ?? 'le prospect'} suite à l'appel`,
+                      250,
+                    ),
                     due_date: '',
                     reason: 'Relance de suivi par défaut (aucune action datée détectée dans l\'appel).',
                   },
@@ -426,12 +451,13 @@ export async function POST(req: NextRequest) {
           for (const t of tasksToCreate) {
             try {
               const dueDateMs = resolveDueDateMs(t.due_date)
+              // Texte IA assaini + cappé avant écriture dans HubSpot (issue #28).
               const taskId = await createTask(
                 target,
-                t.title,
+                sanitizeForHubspot(t.title, 250),
                 dueDateMs,
                 hubspotToken,
-                t.reason,
+                sanitizeForHubspot(t.reason, 1000, true),
               )
               createdTasks.push({
                 title: t.title,
