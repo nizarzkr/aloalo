@@ -20,6 +20,9 @@ import { isTerminalStatus } from "@/lib/call-status";
 import { revalidateCall } from "@/app/dashboard/calls/actions";
 
 const POLL_MS = 3000;
+// Au-delà de cette durée sans état terminal, on cesse de poller et on affiche
+// un message « toujours en cours » (un appel bloqué ne doit pas poller à vie).
+const MAX_POLL_MS = 8 * 60 * 1000; // ~8 min
 
 const STEPS = [
   { key: "transcription", label: "Transcription" },
@@ -62,15 +65,27 @@ export function CallProgress({
 }) {
   const router = useRouter();
   const [status, setStatus] = useState(initialStatus);
+  // Vrai quand on a atteint le plafond de durée sans état terminal : on cesse de
+  // poller et la légende bascule sur « toujours en cours ».
+  const [gaveUp, setGaveUp] = useState(false);
   const [, startTransition] = useTransition();
   // Évite de déclencher deux fois le refresh terminal (poll qui se chevauche).
   const finishedRef = useRef(false);
 
   useEffect(() => {
-    if (isTerminalStatus(status)) return;
+    if (isTerminalStatus(status) || gaveUp) return;
     let cancelled = false;
+    const startedAt = Date.now();
 
     const interval = setInterval(async () => {
+      // Onglet caché : on ne consomme ni réseau ni fonction Vercel.
+      if (document.hidden) return;
+      // Plafond de durée : on abandonne proprement plutôt que de poller à vie.
+      if (Date.now() - startedAt > MAX_POLL_MS) {
+        clearInterval(interval);
+        if (!cancelled) setGaveUp(true);
+        return;
+      }
       try {
         const res = await fetch(`/api/calls/${callId}/status`, {
           cache: "no-store",
@@ -97,7 +112,7 @@ export function CallProgress({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [status, callId, router]);
+  }, [status, callId, router, gaveUp]);
 
   const { states, caption } = describe(status);
 
@@ -163,7 +178,9 @@ export function CallProgress({
           {caption}
         </p>
         <p className="mt-1 text-center text-xs text-muted-foreground/70">
-          Cette page se met à jour automatiquement.
+          {gaveUp
+            ? "Toujours en cours — rafraîchissez la page plus tard."
+            : "Cette page se met à jour automatiquement."}
         </p>
       </CardContent>
     </Card>

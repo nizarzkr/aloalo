@@ -15,6 +15,10 @@ import { useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 const POLL_MS = 4000;
+// Plafond de durée : on cesse d'interroger /api/calls/activity au-delà (un appel
+// bloqué ne doit pas faire poller un onglet oublié à vie). Un refresh/navigation
+// relance le cycle.
+const MAX_POLL_MS = 8 * 60 * 1000; // ~8 min
 
 export function ListAutoRefresh({
   signature,
@@ -33,9 +37,17 @@ export function ListAutoRefresh({
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
+    const startedAt = Date.now();
 
     const interval = setInterval(async () => {
       if (busyRef.current) return;
+      // Onglet caché : pas de poll (ni réseau ni fonction Vercel).
+      if (document.hidden) return;
+      // Plafond atteint : on s'arrête (un refresh/navigation relance le cycle).
+      if (Date.now() - startedAt > MAX_POLL_MS) {
+        clearInterval(interval);
+        return;
+      }
       busyRef.current = true;
       try {
         const res = await fetch("/api/calls/activity", { cache: "no-store" });
