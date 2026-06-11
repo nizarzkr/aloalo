@@ -9,18 +9,16 @@ Supabase.
 
 ## 1. Sauvegardes (backups)
 
-### PITR — Point-In-Time Recovery (recommandé)
+> ⚠️ **Plan actuel : Supabase gratuit → AUCUNE sauvegarde automatique ni PITR.**
+> Les sauvegardes quotidiennes automatiques et le PITR sont réservés au plan **Pro**
+> (PITR étant un add-on payant par-dessus). Tant qu'on reste en gratuit, **le dump
+> manuel `pg_dump` ci-dessous est notre SEULE stratégie de sauvegarde** — à faire à la
+> main (idéalement avant chaque migration risquée, et de façon périodique).
 
-Activer **PITR** dans le dashboard Supabase :
-**Project Settings → Database → Backups**, pour le projet `kynqancfanvekodbhukd`.
-Permet ensuite de restaurer la base à un **instant précis** (pas seulement un snapshot
-quotidien) — c'est le filet principal en cas de mauvaise migration ou de suppression
-accidentelle.
+### Dump manuel / portable (méthode active en plan gratuit)
 
-### Dump manuel / portable
-
-Pour une copie portable (migration de projet, archive froide), faire un dump avec
-`pg_dump` (ou `supabase db dump`) contre la connection string de
+`pg_dump` (ou `supabase db dump`) fonctionne sur n'importe quel plan : c'est une simple
+connexion Postgres. Faire le dump contre la connection string de
 **Project Settings → Database** :
 
 ```bash
@@ -37,19 +35,20 @@ pg_dump "$SUPABASE_DB_URL" -Fc -f aloalo-$(date +%F).dump
 
 ## 2. Restauration (restore)
 
-### Depuis PITR
-
-Dashboard → **Database → Backups → restore-to-timestamp** : choisir l'instant cible
-(typiquement juste avant l'incident).
-
-### Depuis un dump
+### Depuis un dump (méthode active en plan gratuit)
 
 ```bash
 pg_restore --clean --if-exists -d "$TARGET_DB_URL" aloalo-YYYY-MM-DD.dump
 ```
 
 (`--clean --if-exists` supprime les objets existants avant de les recréer, sans erreur si
-absents.)
+absents.) On ne peut restaurer que ce qu'on a dumpé : la fraîcheur de la restauration =
+celle du dernier dump manuel. **D'où l'importance de dumper régulièrement.**
+
+### Depuis PITR (plan Pro uniquement — indisponible en gratuit)
+
+Si/quand on passe en Pro : Dashboard → **Database → Backups → restore-to-timestamp**,
+choisir l'instant cible (typiquement juste avant l'incident).
 
 ---
 
@@ -67,12 +66,17 @@ Le prochain numéro libre = fichier existant le plus haut + 1.
 
 ### Rollback d'une mauvaise migration
 
-Il n'y a **pas** de convention de migration `down`/rollback. Deux chemins de récupération :
+Il n'y a **pas** de convention de migration `down`/rollback. Chemins de récupération
+(en plan gratuit, le PITR n'est pas disponible) :
 
-1. **PITR** : restaurer la base juste **avant** que la migration fautive ne tourne
-   (option la plus sûre pour annuler des effets de données).
-2. **Migration forward inverse** : écrire une **nouvelle** migration numérotée
-   (`supabase/migrations/0023_*.sql`, prochain numéro libre) qui **annule** le changement.
+1. **Migration forward inverse** (chemin principal en gratuit) : écrire une **nouvelle**
+   migration numérotée (`supabase/migrations/0023_*.sql`, prochain numéro libre) qui
+   **annule** le changement.
+2. **Restauration d'un dump manuel** antérieur à la migration fautive — au prix de la
+   perte des données écrites depuis ce dump (cf. §2).
+3. **PITR** (plan Pro uniquement) : restaurer juste **avant** que la migration fautive ne
+   tourne — l'option la plus sûre pour annuler des effets de données, mais indisponible
+   tant qu'on est en gratuit.
 
 > ⛔ **Ne JAMAIS éditer une migration déjà appliquée.** Toujours ajouter un nouveau
 > fichier numéroté — éditer un fichier appliqué crée une dérive entre la prod et l'arbre
