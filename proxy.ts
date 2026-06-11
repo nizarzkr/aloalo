@@ -8,7 +8,11 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Exclut les assets statiques : pas besoin de tourner Supabase pour servir un PNG.
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // On exclut /api (et les webhooks) : ces routes ne dépendent jamais des
+    // redirections du proxy, et le getUser() bloquant ralentirait inutilement
+    // les webhooks fournisseurs (Stripe, AssemblyAI, Ringover) au timeout serré.
+    // On exclut aussi les assets statiques (_next/static, _next/image, favicon).
+    // L'auth du dashboard est de toute façon re-vérifiée côté serveur.
+    "/((?!api|_next/static|_next/image|favicon.ico).*)",
   ],
 };
