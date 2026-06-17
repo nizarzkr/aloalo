@@ -9,7 +9,7 @@
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Briefcase, TrendingDown, TrendingUp } from "lucide-react";
+import { Briefcase, Gauge, TrendingDown, TrendingUp } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -168,6 +168,10 @@ export default async function DealsListPage({
 
   const atRiskCount = allDeals.filter((d) => d.alert != null).length;
   const hygieneCount = hygieneByKey.size;
+  // Deals dont le forecast est « optimiste » (CRM confiant > réalité) — J33.
+  const forecastOptimisticCount = allDeals.filter(
+    (d) => d.forecast.verdict === "optimiste",
+  ).length;
   const hasAnyDeal = allDeals.length > 0;
 
   return (
@@ -192,6 +196,14 @@ export default async function DealsListPage({
                 {" · "}
                 <span className="font-medium text-foreground">
                   {hygieneCount} à nettoyer
+                </span>
+              </>
+            ) : null}
+            {forecastOptimisticCount > 0 ? (
+              <>
+                {" · "}
+                <span className="font-medium text-foreground">
+                  {forecastOptimisticCount} forecast à fiabiliser
                 </span>
               </>
             ) : null}
@@ -292,6 +304,15 @@ function DealCard({
               count={hygiene.count}
               severity={hygiene.severity}
             />
+          ) : null}
+          {deal.forecast.verdict === "optimiste" ? (
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700"
+              title="Confiance CRM supérieure à l'engagement réel — forecast à fiabiliser"
+            >
+              <Gauge className="size-3" aria-hidden />
+              Forecast optimiste
+            </span>
           ) : null}
         </div>
       </div>

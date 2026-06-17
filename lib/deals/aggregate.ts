@@ -25,6 +25,10 @@ import {
   type CoachingAlert,
 } from '@/lib/metrics/coaching-alert'
 import { buildDealPhaseContext } from '@/lib/metrics/phase-context'
+import {
+  computeForecastConfidence,
+  type ForecastConfidence,
+} from '@/lib/metrics/forecast-confidence'
 import type { ConversationMetrics } from '@/lib/metrics/conversation'
 import type { BehavioralSignals } from '@/lib/claude'
 import { getOrgPipelines } from '@/lib/hubspot-pipelines'
@@ -61,6 +65,8 @@ export type DealSummary = {
   alert: CoachingAlert | null
   // Libellé de la phase HubSpot courante (J32), null si inconnu/non synchronisé.
   stage_label: string | null
+  // Fiabilité du forecast (J33) : confiance déclarée (phase) vs engagement réel.
+  forecast: ForecastConfidence
 }
 
 // Au-delà de ce délai sans appel, un deal est considéré « dormant ».
@@ -228,6 +234,16 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
       momentum,
       phase,
     )
+
+    // Fiabilité du forecast (J33) : confiance déclarée (phase) vs engagement réel.
+    const forecast = computeForecastConfidence({
+      advancement: phase?.advancement ?? null,
+      isOpen: phase?.is_open ?? false,
+      lastEngagement: momentum.last_engagement,
+      declining: alert != null,
+      unmetCriteria: (phase?.unmet_criteria.length ?? 0) > 0,
+      stageMismatch: phase?.stage_mismatch ?? false,
+    })
     // Statut : la phase HubSpot « fermée » (gagné/perdu) prime quand on la
     // connaît ; sinon repli sur l'activité (actif/dormant). Les deals simulés et
     // sans HubSpot n'ont pas de phase → comportement inchangé.
@@ -249,6 +265,7 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
       momentum,
       alert,
       stage_label: phase?.stage_label ?? null,
+      forecast,
     }
   })
 

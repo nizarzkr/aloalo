@@ -37,6 +37,10 @@ import {
 import { getDealHygiene } from "@/lib/hygiene/compute";
 import { getOrgPipelines } from "@/lib/hubspot-pipelines";
 import { buildDealPhaseContext } from "@/lib/metrics/phase-context";
+import {
+  computeForecastConfidence,
+  type ForecastVerdict,
+} from "@/lib/metrics/forecast-confidence";
 import { PushHubspotActionButton } from "@/components/dashboard/push-hubspot-action-button";
 import { DealHygienePanel } from "@/components/dashboard/deal-hygiene-panel";
 import { cn } from "@/lib/utils";
@@ -75,6 +79,17 @@ function engagementTone(value: number | null): string {
   if (value >= 40) return "bg-yellow";
   return "bg-red-400";
 }
+
+// Libellé + style du badge de verdict forecast (J33).
+const FORECAST_META: Record<
+  ForecastVerdict,
+  { label: string; className: string }
+> = {
+  optimiste: { label: "Forecast optimiste", className: "bg-red-100 text-red-700" },
+  "sous-estimé": { label: "Possible upside", className: "bg-mint text-foreground" },
+  aligné: { label: "Forecast fiable", className: "bg-muted text-foreground" },
+  indéterminé: { label: "Non évaluable", className: "bg-muted text-muted-foreground" },
+};
 
 const TREND_META: Record<
   MomentumTrend,
@@ -229,6 +244,16 @@ export default async function DealMomentumPage({
     ? await hasPushedCoachingAction(orgFilter, decoded)
     : false;
 
+  // Fiabilité du forecast (J33) : confiance déclarée (phase) vs engagement réel.
+  const forecast = computeForecastConfidence({
+    advancement: phase?.advancement ?? null,
+    isOpen: phase?.is_open ?? false,
+    lastEngagement: momentum.last_engagement,
+    declining: alert != null,
+    unmetCriteria: (phase?.unmet_criteria.length ?? 0) > 0,
+    stageMismatch: phase?.stage_mismatch ?? false,
+  });
+
   const callById = new Map(calls.map((c) => [c.id, c]));
   const dateFmt = (iso: string) =>
     new Date(iso).toLocaleString("fr-FR", {
@@ -363,6 +388,38 @@ export default async function DealMomentumPage({
         </CardContent>
       </Card>
 
+      {/* Fiabilité du forecast (J33) : confiance déclarée vs engagement réel.
+          Affichée seulement si évaluable (phase ouverte connue + engagement). */}
+      {forecast.verdict !== "indéterminé" ? (
+        <Card className="mb-8">
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+            <CardTitle className="text-base">Fiabilité du forecast</CardTitle>
+            <Badge className={cn("gap-1.5", FORECAST_META[forecast.verdict].className)}>
+              {FORECAST_META[forecast.verdict].label}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">{forecast.reason}</p>
+            <div className="grid grid-cols-2 gap-4">
+              <ForecastBar
+                label="Confiance déclarée (CRM)"
+                value={forecast.declared}
+                tone="bg-foreground/70"
+              />
+              <ForecastBar
+                label="Engagement réel (Aloalo)"
+                value={forecast.observed}
+                tone={engagementTone(forecast.observed)}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              On ne produit pas le forecast — on le fiabilise. Indicatif, à croiser
+              avec ton jugement.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* Hygiène du deal (J31) : écarts dit/CRM + correction 1 clic. */}
       <DealHygienePanel
         groupKey={decoded}
@@ -469,6 +526,32 @@ export default async function DealMomentumPage({
           </p>
         ) : null}
       </section>
+    </div>
+  );
+}
+
+// Barre 0-100 pour comparer confiance déclarée vs engagement réel (J33).
+function ForecastBar({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number | null;
+  tone: string;
+}) {
+  const pct = value == null ? 0 : Math.max(0, Math.min(100, value));
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="font-mono text-xs tabular-nums text-foreground">
+          {value == null ? "–" : value}
+        </span>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-muted" aria-hidden>
+        <div className={cn("h-full rounded-full", tone)} style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }
