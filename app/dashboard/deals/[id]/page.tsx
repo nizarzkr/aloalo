@@ -35,6 +35,8 @@ import {
   getPushedHygieneActions,
 } from "@/lib/deals/pushed-actions";
 import { getDealHygiene } from "@/lib/hygiene/compute";
+import { getOrgPipelines } from "@/lib/hubspot-pipelines";
+import { buildDealPhaseContext } from "@/lib/metrics/phase-context";
 import { PushHubspotActionButton } from "@/components/dashboard/push-hubspot-action-button";
 import { DealHygienePanel } from "@/components/dashboard/deal-hygiene-panel";
 import { cn } from "@/lib/utils";
@@ -54,6 +56,7 @@ type CallRow = {
   company_name: string | null;
   deal_name: string | null;
   deal_id: string | null;
+  deal_stage: string | null;
   hubspot_contact_id: string | null;
   status: string;
   started_at: string | null;
@@ -116,7 +119,7 @@ export default async function DealMomentumPage({
   let query = supabase
     .from("calls")
     .select(
-      `id, callee_number, contact_name, company_name, deal_name, deal_id, hubspot_contact_id, status, started_at, created_at,
+      `id, callee_number, contact_name, company_name, deal_name, deal_id, deal_stage, hubspot_contact_id, status, started_at, created_at,
        analyses ( conversation_metrics, behavioral_signals )`,
     )
     .eq("organization_id", orgFilter)
@@ -183,8 +186,33 @@ export default async function DealMomentumPage({
   const momentum = computeDealMomentum(points, crm);
   const trendMeta = TREND_META[momentum.trend];
 
-  // Alerte coaching de CE deal (non null si décrochage) + état « déjà poussé »
-  // dans HubSpot (J26) → conditionne l'affichage du bouton d'action.
+  // Hygiène du deal (J30) + corrections poussées (J31) + carte du tunnel (J27),
+  // chargées AVANT l'alerte : elles nourrissent le contexte phase (J32).
+  const [hygieneReport, pushedHygieneKeys, { pipelines }] = await Promise.all([
+    getDealHygiene(orgFilter, decoded),
+    getPushedHygieneActions(orgFilter),
+    getOrgPipelines(orgFilter),
+  ]);
+
+  // Phase courante = dernière valeur non nulle + jours depuis le dernier appel.
+  const currentStage =
+    [...calls].reverse().find((c) => c.deal_stage)?.deal_stage ?? null;
+  const lastActivityMs = calls.reduce((max, c) => {
+    const ts = Date.parse(c.started_at ?? c.created_at) || 0;
+    return ts > max ? ts : max;
+  }, 0);
+  const nowMs = new Date().getTime();
+  const phase = buildDealPhaseContext({
+    stageId: currentStage,
+    pipelines,
+    gaps: hygieneReport?.gaps ?? [],
+    daysInactive: lastActivityMs
+      ? (nowMs - lastActivityMs) / (24 * 60 * 60 * 1000)
+      : 0,
+  });
+
+  // Alerte coaching de CE deal (non null si décrochage), consciente de la phase
+  // (J32) + état « déjà poussé » dans HubSpot (J26).
   const alert = buildAlertForDeal(
     {
       group_key: decoded,
@@ -195,16 +223,11 @@ export default async function DealMomentumPage({
       calls_count: calls.length,
     },
     momentum,
+    phase,
   );
   const alreadyPushed = alert
     ? await hasPushedCoachingAction(orgFilter, decoded)
     : false;
-
-  // Hygiène du deal (J30) + corrections déjà poussées (J31).
-  const [hygieneReport, pushedHygieneKeys] = await Promise.all([
-    getDealHygiene(orgFilter, decoded),
-    getPushedHygieneActions(orgFilter),
-  ]);
 
   const callById = new Map(calls.map((c) => [c.id, c]));
   const dateFmt = (iso: string) =>
@@ -291,8 +314,10 @@ export default async function DealMomentumPage({
             </p>
           </div>
 
-          {/* Raisons en clair */}
-          {momentum.reasons.length > 0 ? (
+          {/* Raisons en clair — quand le deal décroche, on affiche les raisons
+              ENRICHIES de la phase (J32, alert.reasons) ; sinon la lecture de la
+              trajectoire (momentum). */}
+          {(alert ? alert.reasons : momentum.reasons).length > 0 ? (
             <div>
               <p className="mb-2 text-sm font-medium text-foreground">
                 {momentum.trend === "baisse"
@@ -300,7 +325,7 @@ export default async function DealMomentumPage({
                   : "Lecture de la trajectoire"}
               </p>
               <ul className="space-y-1.5">
-                {momentum.reasons.map((r, i) => (
+                {(alert ? alert.reasons : momentum.reasons).map((r, i) => (
                   <li key={`${r.code}-${i}`} className="flex gap-2 text-sm text-muted-foreground">
                     <span
                       className={cn(
@@ -318,9 +343,16 @@ export default async function DealMomentumPage({
           {/* Action 1:1 actionnable (J26) — uniquement si le deal décroche. */}
           {alert ? (
             <div className="rounded-md bg-red-50 p-4">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-700">
-                Action recommandée
-              </p>
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+                  Action recommandée
+                </p>
+                {alert.stage_label ? (
+                  <Badge className="bg-white/70 text-foreground">
+                    Phase : {alert.stage_label}
+                  </Badge>
+                ) : null}
+              </div>
               <p className="mb-3 text-sm text-foreground">{alert.action}</p>
               <PushHubspotActionButton
                 groupKey={decoded}

@@ -24,8 +24,12 @@ import {
   buildAlertForDeal,
   type CoachingAlert,
 } from '@/lib/metrics/coaching-alert'
+import { buildDealPhaseContext } from '@/lib/metrics/phase-context'
 import type { ConversationMetrics } from '@/lib/metrics/conversation'
 import type { BehavioralSignals } from '@/lib/claude'
+import { getOrgPipelines } from '@/lib/hubspot-pipelines'
+import { getOrgHygiene } from '@/lib/hygiene/store'
+import type { HygieneGap } from '@/lib/hygiene/types'
 
 export type DealStatus = 'gagné' | 'perdu' | 'actif' | 'dormant'
 
@@ -55,6 +59,8 @@ export type DealSummary = {
   momentum: DealMomentum
   // Non null seulement si le deal décroche (trend = baisse).
   alert: CoachingAlert | null
+  // Libellé de la phase HubSpot courante (J32), null si inconnu/non synchronisé.
+  stage_label: string | null
 }
 
 // Au-delà de ce délai sans appel, un deal est considéré « dormant ».
@@ -129,16 +135,28 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
     ]),
   )
 
-  // Appels analysés, triés du plus ancien au plus récent (ordre de trajectoire).
-  const { data: callsData } = await admin
-    .from('calls')
-    .select(
-      `id, user_id, callee_number, contact_name, company_name, deal_name, deal_id, deal_stage, started_at, created_at,
-       analyses ( conversation_metrics, behavioral_signals )`,
-    )
-    .eq('organization_id', orgId)
-    .eq('status', 'analyzed')
-    .order('created_at', { ascending: true })
+  // Appels analysés + carte du tunnel (J27) + cache d'hygiène (J30) en parallèle.
+  // Le tunnel et l'hygiène nourrissent le contexte phase de l'alerte (J32).
+  const [{ data: callsData }, { pipelines }, hygieneReports] =
+    await Promise.all([
+      admin
+        .from('calls')
+        .select(
+          `id, user_id, callee_number, contact_name, company_name, deal_name, deal_id, deal_stage, started_at, created_at,
+           analyses ( conversation_metrics, behavioral_signals )`,
+        )
+        .eq('organization_id', orgId)
+        .eq('status', 'analyzed')
+        .order('created_at', { ascending: true }),
+      getOrgPipelines(orgId),
+      getOrgHygiene(orgId),
+    ])
+
+  // Écarts d'hygiène indexés par deal → contexte phase de l'alerte (J32).
+  const gapsByKey = new Map<string, HygieneGap[]>()
+  for (const r of hygieneReports) {
+    if (r.gaps.length > 0) gapsByKey.set(r.group_key, r.gaps)
+  }
 
   const accs = new Map<string, Acc>()
   for (const row of (callsData ?? []) as CallRow[]) {
@@ -187,6 +205,17 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
   const nowMs = Date.now()
   const deals: DealSummary[] = [...accs.values()].map((acc) => {
     const momentum = computeDealMomentum(acc.points)
+
+    // Contexte phase (J32) : libellé + avancement (tunnel) + écarts d'hygiène +
+    // inactivité. null si la phase n'est pas reconnue dans le tunnel synchronisé.
+    const daysInactive = (nowMs - acc.last_activity) / (24 * 60 * 60 * 1000)
+    const phase = buildDealPhaseContext({
+      stageId: acc.deal_stage,
+      pipelines,
+      gaps: gapsByKey.get(acc.group_key) ?? [],
+      daysInactive,
+    })
+
     const alert = buildAlertForDeal(
       {
         group_key: acc.group_key,
@@ -197,6 +226,7 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
         calls_count: acc.points.length,
       },
       momentum,
+      phase,
     )
     // Statut : la phase HubSpot « fermée » (gagné/perdu) prime quand on la
     // connaît ; sinon repli sur l'activité (actif/dormant). Les deals simulés et
@@ -218,6 +248,7 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
       status,
       momentum,
       alert,
+      stage_label: phase?.stage_label ?? null,
     }
   })
 

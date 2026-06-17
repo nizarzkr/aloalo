@@ -318,6 +318,11 @@ function DealCard({
             <span className="text-xs font-semibold uppercase tracking-wide text-red-700">
               {alert.severity === "haute" ? "Risque élevé" : "À surveiller"}
             </span>
+            {alert.stage_label ? (
+              <span className="text-xs text-red-700/80">
+                · {alert.stage_label}
+              </span>
+            ) : null}
           </div>
           <p className="text-sm text-foreground">{alert.action}</p>
           {/* z-20 : au-dessus du lien étiré pour rester cliquable. */}

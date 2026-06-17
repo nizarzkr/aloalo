@@ -273,45 +273,6 @@ export async function computeDealHygiene(
 }
 
 // --- Lecture (J31) ----------------------------------------------------------
-
-/** Tous les rapports d'hygiène d'une org (futur écran manager). */
-export async function getOrgHygiene(orgId: string): Promise<HygieneReport[]> {
-  const { data } = await admin()
-    .from('deal_hygiene')
-    .select('group_key, stage_id, gaps, calls_signature, criteria_fingerprint, cost_eur, computed_at')
-    .eq('organization_id', orgId)
-
-  return (data ?? []).map((r) => ({
-    group_key: r.group_key as string,
-    stage_id: (r.stage_id as string | null) ?? null,
-    gaps: (r.gaps as HygieneGap[]) ?? [],
-    calls_signature: (r.calls_signature as string | null) ?? '',
-    criteria_fingerprint: (r.criteria_fingerprint as string | null) ?? '',
-    cost_eur: (r.cost_eur as number | null) ?? null,
-    computed_at: r.computed_at as string,
-  }))
-}
-
-/** Rapport d'hygiène d'un deal précis (page trajectoire J31). */
-export async function getDealHygiene(
-  orgId: string,
-  groupKey: string,
-): Promise<HygieneReport | null> {
-  const { data } = await admin()
-    .from('deal_hygiene')
-    .select('group_key, stage_id, gaps, calls_signature, criteria_fingerprint, cost_eur, computed_at')
-    .eq('organization_id', orgId)
-    .eq('group_key', groupKey)
-    .maybeSingle()
-
-  if (!data) return null
-  return {
-    group_key: data.group_key as string,
-    stage_id: (data.stage_id as string | null) ?? null,
-    gaps: (data.gaps as HygieneGap[]) ?? [],
-    calls_signature: (data.calls_signature as string | null) ?? '',
-    criteria_fingerprint: (data.criteria_fingerprint as string | null) ?? '',
-    cost_eur: (data.cost_eur as number | null) ?? null,
-    computed_at: data.computed_at as string,
-  }
-}
+// Déplacées dans lib/hygiene/store.ts (J32) pour casser le cycle d'imports
+// aggregate↔compute ; ré-exportées ici pour ne rien changer côté appelants.
+export { getOrgHygiene, getDealHygiene } from '@/lib/hygiene/store'
