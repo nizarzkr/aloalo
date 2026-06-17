@@ -9,6 +9,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { UserProfile } from "@/components/dashboard/user-profile";
 import { createClient } from "@/lib/supabase/server";
+import { summarizeDimensions } from "@/lib/metrics/dimensions-summary";
 
 const ANALYZED_CALLS_LIMIT = 30;
 
@@ -47,22 +48,22 @@ export default async function UserProfilePage({
 
   // 2 & 3. Appels analysés (chrono ascendant pour la courbe) + agrégats globaux
   //        sur l'historique complet du commercial.
-  const [analyzedCallsRes, allScoresRes, allDurationsRes] = await Promise.all([
+  const [analyzedCallsRes, allDimsRes, allDurationsRes] = await Promise.all([
     supabase
       .from("calls")
       .select(
-        "id, callee_number, contact_name, company_name, deal_name, started_at, created_at, duration_seconds, status, analyses ( score_global )",
+        "id, callee_number, contact_name, company_name, deal_name, started_at, created_at, duration_seconds, status, analyses ( dimensions )",
       )
       .eq("organization_id", orgId)
       .eq("user_id", id)
       .eq("status", "analyzed")
       .order("created_at", { ascending: true })
       .limit(ANALYZED_CALLS_LIMIT),
-    // Score moyen calculé sur TOUTES les analyses du user, pas juste les 30
+    // Moyenne calculée sur TOUTES les analyses du user, pas juste les 30
     // dernières — plus représentatif.
     supabase
       .from("analyses")
-      .select("score_global, calls!inner ( user_id )")
+      .select("dimensions, calls!inner ( user_id )")
       .eq("organization_id", orgId)
       .eq("calls.user_id", id),
     supabase
@@ -74,17 +75,21 @@ export default async function UserProfilePage({
   ]);
 
   const analyzedCalls = analyzedCallsRes.data ?? [];
-  const allScores = (allScoresRes.data ?? [])
-    .map((a) => a.score_global)
+  // Nb de dimensions validées (0-5) par analyse → remplace le score /100 (J25).
+  const allValidated = (allDimsRes.data ?? [])
+    .map((a) => summarizeDimensions(a.dimensions)?.validated)
     .filter((v): v is number => typeof v === "number");
   const totalDurationSeconds = (allDurationsRes.data ?? []).reduce(
     (sum, c) => sum + (c.duration_seconds ?? 0),
     0,
   );
 
-  const avgScore =
-    allScores.length > 0
-      ? Math.round(allScores.reduce((s, v) => s + v, 0) / allScores.length)
+  // Moyenne de dimensions validées, 1 décimale (ex. « 3,2 / 5 »).
+  const avgValidated =
+    allValidated.length > 0
+      ? Math.round(
+          (allValidated.reduce((s, v) => s + v, 0) / allValidated.length) * 10,
+        ) / 10
       : null;
 
   return (
@@ -93,8 +98,8 @@ export default async function UserProfilePage({
       calls={analyzedCalls.map((c) => {
         // L'embed FK 1-to-1 peut renvoyer objet ou tableau selon le client.
         const rel = c.analyses as
-          | { score_global: number | null }
-          | { score_global: number | null }[]
+          | { dimensions: unknown }
+          | { dimensions: unknown }[]
           | null;
         const analysis = Array.isArray(rel) ? rel[0] : rel;
         return {
@@ -107,11 +112,11 @@ export default async function UserProfilePage({
           created_at: c.created_at,
           duration_seconds: c.duration_seconds,
           status: c.status,
-          score_global: analysis?.score_global ?? null,
+          dimensions: analysis?.dimensions ?? null,
         };
       })}
-      analyzedCount={allScores.length}
-      avgScore={avgScore}
+      analyzedCount={allValidated.length}
+      avgValidated={avgValidated}
       totalDurationSeconds={totalDurationSeconds}
     />
   );

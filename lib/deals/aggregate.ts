@@ -27,7 +27,20 @@ import {
 import type { ConversationMetrics } from '@/lib/metrics/conversation'
 import type { BehavioralSignals } from '@/lib/claude'
 
-export type DealStatus = 'actif' | 'dormant'
+export type DealStatus = 'gagné' | 'perdu' | 'actif' | 'dormant'
+
+// Mappe une phase HubSpot (dealstage) vers un statut « fermé » (J25 phase 2).
+// On ne reconnaît avec certitude que les stages des pipelines STANDARD HubSpot
+// (closedwon / closedlost). Les pipelines personnalisés utilisent des IDs de
+// stage propres au client → on ne devine pas, ils retombent sur l'activité
+// (la cartographie complète du tunnel viendra en Semaine 4).
+function closedStatusFromStage(stage: string | null): DealStatus | null {
+  if (!stage) return null
+  const s = stage.toLowerCase()
+  if (s === 'closedwon') return 'gagné'
+  if (s === 'closedlost') return 'perdu'
+  return null
+}
 
 export type DealSummary = {
   group_key: string
@@ -62,6 +75,7 @@ type CallRow = {
   company_name: string | null
   deal_name: string | null
   deal_id: string | null
+  deal_stage: string | null
   started_at: string | null
   created_at: string
   analyses: AnalysisRel | AnalysisRel[]
@@ -86,6 +100,7 @@ type Acc = {
   deal_name: string | null
   owner_id: string | null
   owner_name: string | null
+  deal_stage: string | null // phase HubSpot du dernier appel rencontré
   points: DealCallPoint[]
   last_activity: number // ms, max rencontré
 }
@@ -117,7 +132,7 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
   const { data: callsData } = await admin
     .from('calls')
     .select(
-      `id, user_id, callee_number, contact_name, company_name, deal_name, deal_id, started_at, created_at,
+      `id, user_id, callee_number, contact_name, company_name, deal_name, deal_id, deal_stage, started_at, created_at,
        analyses ( conversation_metrics, behavioral_signals )`,
     )
     .eq('organization_id', orgId)
@@ -151,6 +166,8 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
       existing.contact_name = row.contact_name ?? existing.contact_name
       existing.company_name = row.company_name ?? existing.company_name
       existing.deal_name = row.deal_name ?? existing.deal_name
+      // Phase HubSpot = celle du dernier appel (rows triées asc → la dernière gagne).
+      existing.deal_stage = row.deal_stage ?? existing.deal_stage
     } else {
       accs.set(key, {
         group_key: key,
@@ -159,6 +176,7 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
         deal_name: row.deal_name,
         owner_id: row.user_id,
         owner_name: row.user_id ? (memberName.get(row.user_id) ?? null) : null,
+        deal_stage: row.deal_stage,
         points: [point],
         last_activity: ts,
       })
@@ -179,8 +197,13 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
       },
       momentum,
     )
+    // Statut : la phase HubSpot « fermée » (gagné/perdu) prime quand on la
+    // connaît ; sinon repli sur l'activité (actif/dormant). Les deals simulés et
+    // sans HubSpot n'ont pas de phase → comportement inchangé.
+    const closed = closedStatusFromStage(acc.deal_stage)
     const status: DealStatus =
-      nowMs - acc.last_activity <= DORMANT_AFTER_MS ? 'actif' : 'dormant'
+      closed ??
+      (nowMs - acc.last_activity <= DORMANT_AFTER_MS ? 'actif' : 'dormant')
 
     return {
       group_key: acc.group_key,

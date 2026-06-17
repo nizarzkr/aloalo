@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { CallsFilterBar } from "@/components/dashboard/calls-filter-bar";
 import { CallStatusBadge } from "@/components/dashboard/call-status-badge";
+import { DimensionsDots } from "@/components/dashboard/dimensions-dots";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ListAutoRefresh } from "@/components/dashboard/list-auto-refresh";
 import { revalidateCallsList } from "@/app/dashboard/calls/actions";
@@ -49,7 +50,7 @@ function formatDuration(totalSeconds: number) {
 
 type CallsSearchParams = {
   period?: string;
-  score?: string;
+  quality?: string;
   page?: string;
 };
 
@@ -58,7 +59,7 @@ export default async function CallsListPage({
 }: {
   searchParams: Promise<CallsSearchParams>;
 }) {
-  const { period, score, page } = await searchParams;
+  const { period, quality, page } = await searchParams;
 
   const supabase = await createClient();
 
@@ -90,15 +91,18 @@ export default async function CallsListPage({
     dateFrom = startOfCurrentMonth(new Date()).toISOString();
   }
 
-  // Filtre score : on bascule l'embed analyses en !inner pour que le
-  // .gte/.lt sur la table embarquée filtre vraiment les calls retournés.
-  // Sans !inner, l'embed est optionnel et le filtre ne réduit pas la liste.
-  const isGood = score === "good";
-  const isLow = score === "low";
+  // Filtre qualité (J25) : basé sur les dimensions (validé/partiel/manqué), plus
+  // sur un score. On bascule l'embed en !inner pour que le filtre sur la table
+  // embarquée réduise vraiment la liste (sinon l'embed optionnel ne filtre pas).
+  // « à retravailler » = au moins une dimension MANQUÉE ; « solide » = aucune.
+  // Implémenté via containment jsonb (@>) : dimensions contient {status:manqué}.
+  const MISSED_CONTAINS = JSON.stringify([{ status: "manqué" }]);
+  const isAttention = quality === "attention";
+  const isSolide = quality === "solide";
   const analysesEmbed =
-    isGood || isLow
-      ? "analyses!inner ( score_global )"
-      : "analyses ( score_global )";
+    isAttention || isSolide
+      ? "analyses!inner ( dimensions )"
+      : "analyses ( dimensions )";
 
   let query = supabase
     .from("calls")
@@ -113,10 +117,10 @@ export default async function CallsListPage({
   if (dateFrom) {
     query = query.gte("created_at", dateFrom);
   }
-  if (isGood) {
-    query = query.gte("analyses.score_global", 70);
-  } else if (isLow) {
-    query = query.lt("analyses.score_global", 50);
+  if (isAttention) {
+    query = query.filter("analyses.dimensions", "cs", MISSED_CONTAINS);
+  } else if (isSolide) {
+    query = query.not("analyses.dimensions", "cs", MISSED_CONTAINS);
   }
 
   const { data: callsData, count } = await query;
@@ -159,7 +163,7 @@ export default async function CallsListPage({
   function buildPageHref(targetPage: number) {
     const params = new URLSearchParams();
     if (period && period !== "all") params.set("period", period);
-    if (score && score !== "all") params.set("score", score);
+    if (quality && quality !== "all") params.set("quality", quality);
     if (targetPage > 1) params.set("page", String(targetPage));
     const qs = params.toString();
     return qs ? `/dashboard/calls?${qs}` : "/dashboard/calls";
@@ -172,7 +176,7 @@ export default async function CallsListPage({
   // l'état des filtres tel qu'envoyé en query string (et non `count`, qui est
   // toujours filtré).
   const hasActiveFilters =
-    (period && period !== "all") || (score && score !== "all");
+    (period && period !== "all") || (quality && quality !== "all");
   const isInitiallyEmpty = totalCount === 0 && !hasActiveFilters;
 
   return (
@@ -226,13 +230,12 @@ export default async function CallsListPage({
                 {calls.map((call) => {
                   // L'embed FK 1-to-1 peut renvoyer objet ou tableau.
                   const analysisRel = call.analyses as
-                    | { score_global: number | null }
-                    | { score_global: number | null }[]
+                    | { dimensions: unknown }
+                    | { dimensions: unknown }[]
                     | null;
                   const analysis = Array.isArray(analysisRel)
                     ? analysisRel[0]
                     : analysisRel;
-                  const scoreValue = analysis?.score_global ?? null;
                   const dateRef = call.started_at ?? call.created_at;
                   const status = call.status as string;
 
@@ -282,8 +285,8 @@ export default async function CallsListPage({
                             ? formatDuration(call.duration_seconds)
                             : "–"}
                         </span>
-                        <span className="min-w-10 text-right text-sm font-semibold tabular-nums">
-                          {scoreValue !== null ? `${scoreValue}%` : "–"}
+                        <span className="justify-self-end">
+                          <DimensionsDots dimensions={analysis?.dimensions} />
                         </span>
                         <CallStatusBadge status={status} />
                       </Link>

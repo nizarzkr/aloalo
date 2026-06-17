@@ -27,8 +27,8 @@
  *               on renvoie le digest DU deal ; sinon le digest du contact.
  *
  * Réponse :
- *   - fiche contact : { lastScore, callCount, lastCallLabel, axe, lastCallId }
- *   - fiche deal    : { callCount, avgScore, lastScore, lastCallLabel, lastCallId }
+ *   - fiche contact : { lastValidated, lastTotal, callCount, lastCallLabel, axe, lastCallId }
+ *   - fiche deal    : { callCount, avgValidated, lastValidated, lastTotal, lastCallLabel, lastCallId }
  *   - état vide     : { message }
  *   Jamais de 500 (try/catch).
  */

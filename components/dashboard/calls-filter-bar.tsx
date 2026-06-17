@@ -16,17 +16,19 @@ const PERIOD_OPTIONS = [
   { value: "month", label: "Ce mois" },
 ] as const;
 
-const SCORE_OPTIONS = [
-  { value: "all", label: "Tous les scores" },
-  { value: "good", label: "Bons (≥ 70)" },
-  { value: "low", label: "À retravailler (< 50)" },
+// Filtre qualité (J25) : basé sur les dimensions (validé/partiel/manqué), plus
+// sur un score. « À retravailler » = au moins une dimension manquée.
+const QUALITY_OPTIONS = [
+  { value: "all", label: "Toutes qualités" },
+  { value: "solide", label: "Solides" },
+  { value: "attention", label: "À retravailler" },
 ] as const;
 
 const PERIOD_LABEL: Record<string, string> = Object.fromEntries(
   PERIOD_OPTIONS.map((o) => [o.value, o.label]),
 );
-const SCORE_LABEL: Record<string, string> = Object.fromEntries(
-  SCORE_OPTIONS.map((o) => [o.value, o.label]),
+const QUALITY_LABEL: Record<string, string> = Object.fromEntries(
+  QUALITY_OPTIONS.map((o) => [o.value, o.label]),
 );
 
 export function CallsFilterBar() {
@@ -34,11 +36,11 @@ export function CallsFilterBar() {
   const searchParams = useSearchParams();
 
   const currentPeriod = searchParams.get("period") ?? "all";
-  const currentScore = searchParams.get("score") ?? "all";
+  const currentQuality = searchParams.get("quality") ?? "all";
 
   // Met à jour un paramètre, supprime "all" pour garder l'URL propre,
   // et reset systématiquement la pagination à la première page.
-  function update(key: "period" | "score", value: string) {
+  function update(key: "period" | "quality", value: string) {
     const params = new URLSearchParams(searchParams.toString());
     if (value === "all") {
       params.delete(key);
@@ -71,16 +73,18 @@ export function CallsFilterBar() {
       </Select>
 
       <Select
-        value={currentScore}
-        onValueChange={(value) => update("score", value as string)}
+        value={currentQuality}
+        onValueChange={(value) => update("quality", value as string)}
       >
         <SelectTrigger className="w-full sm:w-auto sm:min-w-44">
           <SelectValue>
-            {(v: string | null) => SCORE_LABEL[v ?? "all"] ?? "Tous les scores"}
+            {(v: string | null) =>
+              QUALITY_LABEL[v ?? "all"] ?? "Toutes qualités"
+            }
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {SCORE_OPTIONS.map((opt) => (
+          {QUALITY_OPTIONS.map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>
               {opt.label}
             </SelectItem>

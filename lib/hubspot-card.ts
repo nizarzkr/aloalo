@@ -18,10 +18,15 @@
 import { createClient } from '@supabase/supabase-js'
 import { getContact, getDealCalls } from '@/lib/hubspot'
 import { decryptSecret } from '@/lib/crypto/org-secrets'
+import { summarizeDimensions } from '@/lib/metrics/dimensions-summary'
 
 // Données affichables de la carte (dernier appel analysé du contact).
+// Depuis J25, on n'expose plus de score /100 : on montre le nb de dimensions
+// validées (validé/partiel/manqué) du dernier appel, dans le même langage que
+// l'app. `lastTotal` = nb de dimensions présentes (normalement 5).
 export type CardData = {
-  lastScore: number | null
+  lastValidated: number | null
+  lastTotal: number | null
   callCount: number
   lastCallLabel: string
   axe: string
@@ -29,11 +34,12 @@ export type CardData = {
 }
 
 // Données affichables de la carte DEAL : digest des appels rattachés à CE deal.
-// `avgScore` = santé commerciale du dossier (moyenne des scores du deal).
+// `avgValidated` = santé du dossier en dimensions validées moyennes (sur 5).
 export type DealCardData = {
   callCount: number
-  avgScore: number | null
-  lastScore: number | null
+  avgValidated: number | null
+  lastValidated: number | null
+  lastTotal: number | null
   lastCallLabel: string
   lastCallId: string
 }
@@ -60,7 +66,7 @@ const DATE_FMT = new Intl.DateTimeFormat('fr-FR', {
 
 // Forme partielle d'une analyse telle qu'on la lit ici (jsonb non typé en DB).
 type AnalysisRow = {
-  score_global: number | null
+  dimensions: unknown
   weaknesses: Array<{ point?: string }> | null
   coaching_advice: Array<{ advice?: string; priority?: string }> | null
 }
@@ -143,7 +149,7 @@ export async function getContactCardData({
   const { data: rows, count } = await supabase
     .from('calls')
     .select(
-      'id, started_at, created_at, analyses!inner(score_global, weaknesses, coaching_advice)',
+      'id, started_at, created_at, analyses!inner(dimensions, weaknesses, coaching_advice)',
       { count: 'exact' },
     )
     .eq('organization_id', org.id)
@@ -164,9 +170,11 @@ export async function getContactCardData({
   }
   const lastAnalysis = pickAnalysis(first.analyses)
   const lastCallRaw = first.started_at ?? first.created_at
+  const lastSummary = summarizeDimensions(lastAnalysis?.dimensions)
 
   return {
-    lastScore: lastAnalysis?.score_global ?? null,
+    lastValidated: lastSummary?.validated ?? null,
+    lastTotal: lastSummary?.total ?? null,
     callCount: count ?? rows.length,
     lastCallLabel: lastCallRaw ? DATE_FMT.format(new Date(lastCallRaw)) : '—',
     axe: pickAxe(lastAnalysis),
@@ -251,7 +259,7 @@ export async function getDealCardData({
   const { data: rows } = await supabase
     .from('calls')
     .select(
-      'id, callee_number, started_at, created_at, analyses!inner(score_global)',
+      'id, callee_number, started_at, created_at, analyses!inner(dimensions)',
     )
     .eq('organization_id', org.id)
     .in('callee_number', numbers)
@@ -265,7 +273,12 @@ export async function getDealCardData({
   // 4. Matcher chaque appel HubSpot au plus proche appel Aloalo (même numéro,
   //    écart d'horaire ≤ fenêtre), sans réutiliser deux fois le même appel.
   const usedAloalo = new Set<string>()
-  const matched: Array<{ id: string; score: number | null; ms: number }> = []
+  const matched: Array<{
+    id: string
+    validated: number | null
+    total: number | null
+    ms: number
+  }> = []
 
   for (const hc of dealCalls) {
     if (!hc.toNumber || hc.timestampMs == null) continue
@@ -284,9 +297,11 @@ export async function getDealCardData({
     }
     if (best) {
       usedAloalo.add(best.id)
+      const summary = summarizeDimensions(pickAnalysis(best.analyses)?.dimensions)
       matched.push({
         id: best.id,
-        score: pickAnalysis(best.analyses)?.score_global ?? null,
+        validated: summary?.validated ?? null,
+        total: summary?.total ?? null,
         ms: callMs(best),
       })
     }
@@ -296,21 +311,24 @@ export async function getDealCardData({
     return { message: 'Aucun appel analysé sur ce deal' }
   }
 
-  // 5. Agréger : moyenne des scores + dernier appel (le plus récent).
-  const scores = matched
-    .map((m) => m.score)
-    .filter((s): s is number => typeof s === 'number')
-  const avgScore =
-    scores.length > 0
-      ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+  // 5. Agréger : moyenne des dimensions validées + dernier appel (le plus récent).
+  const validatedVals = matched
+    .map((m) => m.validated)
+    .filter((v): v is number => typeof v === 'number')
+  const avgValidated =
+    validatedVals.length > 0
+      ? Math.round(
+          (validatedVals.reduce((a, b) => a + b, 0) / validatedVals.length) * 10,
+        ) / 10
       : null
 
   const last = matched.reduce((a, b) => (b.ms > a.ms ? b : a))
 
   return {
     callCount: matched.length,
-    avgScore,
-    lastScore: last.score,
+    avgValidated,
+    lastValidated: last.validated,
+    lastTotal: last.total,
     lastCallLabel: Number.isFinite(last.ms)
       ? DATE_FMT.format(new Date(last.ms))
       : '—',

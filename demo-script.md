@@ -20,6 +20,7 @@
 - [ ] Onglets ouverts d'avance : `Aloalo /dashboard/deals` + la fiche **deal Acme** HubSpot.
 - [ ] ⚠️ **Ne jamais utiliser le numéro `+33189665544`** (donnée de test corrompue).
 - [ ] Plan B si la simu rame : avoir **un appel déjà analysé** ouvert dans un onglet de secours.
+- [ ] 🆕 **Cohérence « zéro score sur 100 »** : depuis J25 le score chiffré a disparu de **tous** les écrans. Accueil = KPI **« Deals à risque »** ; listes d'appels (accueil, `/dashboard/calls`, fiche commercial) = **pastilles de dimensions** (vert/orange/rouge), plus de colonne « X% » ; fiche commercial = courbe **« Dimensions validées » (0-5)**. Si un prospect clique partout, rien ne contredit le discours « on ne vend pas une note ».
 
 ---
 

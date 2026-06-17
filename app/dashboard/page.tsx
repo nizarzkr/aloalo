@@ -11,10 +11,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CallStatusBadge } from "@/components/dashboard/call-status-badge";
+import { DimensionsDots } from "@/components/dashboard/dimensions-dots";
 import { ListAutoRefresh } from "@/components/dashboard/list-auto-refresh";
 import { revalidateDashboardHome } from "@/app/dashboard/calls/actions";
 import { createClient } from "@/lib/supabase/server";
 import { buildSignature, IN_PROGRESS_STATUSES } from "@/lib/call-status";
+import { aggregateOrgDeals } from "@/lib/deals/aggregate";
 import { cn } from "@/lib/utils";
 
 // Début de la semaine en cours (lundi 00:00 dans la timezone du serveur).
@@ -62,9 +64,6 @@ export default async function DashboardPage() {
   // Bornes temporelles pour les KPI
   const now = new Date();
   const weekStartIso = startOfCurrentWeek(now).toISOString();
-  const sevenDaysAgoIso = new Date(
-    now.getTime() - 7 * 24 * 3600 * 1000,
-  ).toISOString();
 
   // RLS scope déjà à l'org du JWT, mais on filtre explicitement par défense
   // en profondeur — et pour court-circuiter si l'org n'est pas encore connue.
@@ -72,7 +71,7 @@ export default async function DashboardPage() {
 
   const [
     weekCallsRes,
-    scoresRes,
+    dealsAtRisk,
     durationsRes,
     latestCallsRes,
     inProgressRes,
@@ -83,11 +82,9 @@ export default async function DashboardPage() {
       .eq("organization_id", orgFilter)
       .eq("status", "analyzed")
       .gte("created_at", weekStartIso),
-    supabase
-      .from("analyses")
-      .select("score_global")
-      .eq("organization_id", orgFilter)
-      .gte("created_at", sevenDaysAgoIso),
+    // Deals à risque (J25) : on réutilise l'agrégation des deals et on compte
+    // ceux qui décrochent (alerte coaching non nulle). Remplace le « score moyen ».
+    orgId ? aggregateOrgDeals(orgId) : Promise.resolve([]),
     supabase
       .from("calls")
       .select("duration_seconds")
@@ -96,7 +93,7 @@ export default async function DashboardPage() {
     supabase
       .from("calls")
       .select(
-        "id, started_at, created_at, duration_seconds, status, contact_name, callee_number, company_name, deal_name, analyses ( score_global )",
+        "id, started_at, created_at, duration_seconds, status, contact_name, callee_number, company_name, deal_name, analyses ( dimensions )",
       )
       .eq("organization_id", orgFilter)
       .order("created_at", { ascending: false })
@@ -118,15 +115,8 @@ export default async function DashboardPage() {
 
   const weekCount = weekCallsRes.count ?? 0;
 
-  const scoreValues = (scoresRes.data ?? [])
-    .map((a) => a.score_global)
-    .filter((v): v is number => typeof v === "number");
-  const avgScore =
-    scoreValues.length > 0
-      ? Math.round(
-          scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length,
-        )
-      : null;
+  // Deals à risque = deals avec une alerte de décrochage (cf. aggregateOrgDeals).
+  const atRiskCount = dealsAtRisk.filter((d) => d.alert !== null).length;
 
   const totalSeconds = (durationsRes.data ?? []).reduce(
     (sum, c) => sum + (c.duration_seconds ?? 0),
@@ -141,8 +131,8 @@ export default async function DashboardPage() {
       value: String(weekCount),
     },
     {
-      label: "Score moyen",
-      value: avgScore !== null ? `${avgScore}%` : "–",
+      label: "Deals à risque",
+      value: String(atRiskCount),
     },
     {
       label: "Durée totale analysée",
@@ -207,13 +197,12 @@ export default async function DashboardPage() {
                 {latestCalls.map((call) => {
                   // L'embed Supabase d'une FK 1-to-1 peut renvoyer objet ou tableau
                   const analysisRel = call.analyses as
-                    | { score_global: number | null }
-                    | { score_global: number | null }[]
+                    | { dimensions: unknown }
+                    | { dimensions: unknown }[]
                     | null;
                   const analysis = Array.isArray(analysisRel)
                     ? analysisRel[0]
                     : analysisRel;
-                  const score = analysis?.score_global ?? null;
                   const dateRef = call.started_at ?? call.created_at;
                   const status = call.status as string;
 
@@ -252,8 +241,8 @@ export default async function DashboardPage() {
                             ? formatDuration(call.duration_seconds)
                             : "–"}
                         </span>
-                        <span className="min-w-10 text-right text-sm font-semibold tabular-nums">
-                          {score !== null ? `${score}%` : "–"}
+                        <span className="justify-self-end">
+                          <DimensionsDots dimensions={analysis?.dimensions} />
                         </span>
                         <CallStatusBadge status={status} />
                       </Link>

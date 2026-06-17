@@ -32,6 +32,15 @@ type DealsSearchParams = {
   sort?: string;
 };
 
+// Libellé + style du badge de statut deal. Gagné/perdu viennent de la phase
+// HubSpot (J25 phase 2) ; actif/dormant de l'activité récente.
+const STATUS_BADGE: Record<DealSummary["status"], { label: string; className: string }> = {
+  gagné: { label: "Gagné", className: "bg-mint text-foreground" },
+  perdu: { label: "Perdu", className: "bg-red-400 text-foreground" },
+  actif: { label: "Actif", className: "bg-muted text-foreground" },
+  dormant: { label: "Dormant", className: "bg-muted text-muted-foreground" },
+};
+
 // Couleur d'un indice d'engagement 0-100 (mêmes paliers que la page trajectoire).
 function engagementTone(value: number | null): string {
   if (value == null) return "bg-muted";
@@ -204,15 +213,8 @@ function DealCard({ deal }: { deal: DealSummary }) {
             {deal.calls_count} appel{deal.calls_count > 1 ? "s" : ""}
           </p>
         </div>
-        <Badge
-          className={cn(
-            "shrink-0",
-            deal.status === "actif"
-              ? "bg-muted text-foreground"
-              : "bg-muted text-muted-foreground",
-          )}
-        >
-          {deal.status === "actif" ? "Actif" : "Dormant"}
+        <Badge className={cn("shrink-0", STATUS_BADGE[deal.status].className)}>
+          {STATUS_BADGE[deal.status].label}
         </Badge>
       </div>
 

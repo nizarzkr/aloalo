@@ -17,9 +17,10 @@
 //   - deal    (`0-3`) → digest DU deal (param `dealId`)
 //
 // Données reçues (forme = JSON de /api/hubspot/card-data) :
-//   contact : { lastScore, callCount, lastCallLabel, axe, lastCallId }
-//   deal    : { callCount, avgScore, lastScore, lastCallLabel, lastCallId }
+//   contact : { lastValidated, lastTotal, callCount, lastCallLabel, axe, lastCallId }
+//   deal    : { callCount, avgValidated, lastValidated, lastTotal, lastCallLabel, lastCallId }
 //   vide    : { message }
+// Depuis J25, plus de score /100 : on affiche le nb de dimensions validées (/5).
 // ============================================================================
 
 import { useEffect, useState } from 'react';
@@ -45,7 +46,8 @@ const DEAL_OBJECT_TYPE_ID = '0-3';
 
 // Digest d'un contact (dernier appel analysé de la personne).
 type ContactData = {
-  lastScore: number | null;
+  lastValidated: number | null;
+  lastTotal: number | null;
   callCount: number;
   lastCallLabel: string;
   axe: string;
@@ -54,11 +56,16 @@ type ContactData = {
 // Digest d'un deal (appels rattachés à ce deal).
 type DealData = {
   callCount: number;
-  avgScore: number | null;
-  lastScore: number | null;
+  avgValidated: number | null;
+  lastValidated: number | null;
+  lastTotal: number | null;
   lastCallLabel: string;
   lastCallId: string;
 };
+
+// Formate « N / T » dimensions validées, ou « — » si indisponible.
+const fmtDims = (validated: number | null, total: number | null) =>
+  validated != null ? `${validated} / ${total ?? 5}` : '—';
 // Soit des données, soit un message expliquant l'absence de données.
 type CardResult = ContactData | DealData | { message: string };
 
@@ -113,13 +120,17 @@ const AloaloCard = ({ context }: { context: CrmContext }) => {
           <DescriptionListItem label="Appels analysés">
             <Text>{String(deal.callCount)}</Text>
           </DescriptionListItem>
-          <DescriptionListItem label="Score moyen">
-            <Text>{deal.avgScore != null ? `${deal.avgScore}/100` : '—'}</Text>
+          <DescriptionListItem label="Dimensions validées (moy.)">
+            <Text>
+              {deal.avgValidated != null ? `${deal.avgValidated} / 5` : '—'}
+            </Text>
           </DescriptionListItem>
           <DescriptionListItem label="Dernier appel">
             <Text>
               {deal.lastCallLabel}
-              {deal.lastScore != null ? ` · ${deal.lastScore}/100` : ''}
+              {deal.lastValidated != null
+                ? ` · ${fmtDims(deal.lastValidated, deal.lastTotal)}`
+                : ''}
             </Text>
           </DescriptionListItem>
         </DescriptionList>
@@ -137,10 +148,8 @@ const AloaloCard = ({ context }: { context: CrmContext }) => {
     <>
       <Heading>Historique Aloalo</Heading>
       <DescriptionList direction="row">
-        <DescriptionListItem label="Dernier score">
-          <Text>
-            {contact.lastScore != null ? `${contact.lastScore}/100` : '—'}
-          </Text>
+        <DescriptionListItem label="Dimensions validées">
+          <Text>{fmtDims(contact.lastValidated, contact.lastTotal)}</Text>
         </DescriptionListItem>
         <DescriptionListItem label="Appels analysés">
           <Text>{String(contact.callCount)}</Text>

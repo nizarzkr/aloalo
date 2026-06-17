@@ -25,6 +25,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { DimensionsDots } from "@/components/dashboard/dimensions-dots";
+import { summarizeDimensions } from "@/lib/metrics/dimensions-summary";
 import { cn } from "@/lib/utils";
 
 type Profile = {
@@ -45,14 +47,14 @@ type Call = {
   created_at: string;
   duration_seconds: number | null;
   status: string;
-  score_global: number | null;
+  dimensions: unknown; // jsonb des 5 dimensions (J21) — null si appel pré-J21
 };
 
 type Props = {
   profile: Profile;
   calls: Call[]; // chronologique ascendant, max 30
   analyzedCount: number;
-  avgScore: number | null;
+  avgValidated: number | null; // moyenne de dimensions validées (0-5), J25
   totalDurationSeconds: number;
 };
 
@@ -123,7 +125,7 @@ function formatShortDate(iso: string) {
   });
 }
 
-type ChartDatum = { date: string; score: number };
+type ChartDatum = { date: string; validated: number };
 
 // recharts injecte les props au runtime via cloneElement → toutes optionnelles
 // côté types pour pouvoir passer <ChartTooltip /> à Tooltip.content.
@@ -135,7 +137,7 @@ function ChartTooltip({
   const value = payload[0].value;
   return (
     <div className="rounded-md border border-border bg-background px-2 py-1 text-xs shadow-md">
-      Score : {value}/100
+      Validées : {value} / 5
     </div>
   );
 }
@@ -144,26 +146,38 @@ export function UserProfile({
   profile,
   calls,
   analyzedCount,
-  avgScore,
+  avgValidated,
   totalDurationSeconds,
 }: Props) {
   const displayName = profile.full_name?.trim() || profile.email;
   const initials = getInitials(profile);
 
-  // Courbe : on garde les calls qui ont vraiment un score.
+  // Courbe (J25) : nb de dimensions validées (0-5) par appel, dans le temps.
+  // On ne garde que les appels qui ont des dimensions exploitables.
   const chartData: ChartDatum[] = calls
-    .filter((c) => typeof c.score_global === "number")
-    .map((c) => ({
-      date: formatShortDate(c.started_at ?? c.created_at),
-      score: c.score_global as number,
-    }));
+    .map((c) => {
+      const summary = summarizeDimensions(c.dimensions);
+      return summary
+        ? {
+            date: formatShortDate(c.started_at ?? c.created_at),
+            validated: summary.validated,
+          }
+        : null;
+    })
+    .filter((d): d is ChartDatum => d !== null);
 
   // Tableau : 10 plus récents (calls est ASC pour le chart, on retourne et coupe).
   const recentCalls = [...calls].reverse().slice(0, 10);
 
   const kpis = [
     { label: "Appels analysés", value: String(analyzedCount) },
-    { label: "Score moyen", value: avgScore !== null ? `${avgScore}%` : "–" },
+    {
+      label: "Dimensions validées (moy.)",
+      value:
+        avgValidated !== null
+          ? `${avgValidated.toLocaleString("fr-FR")} / 5`
+          : "–",
+    },
     { label: "Durée totale", value: formatDuration(totalDurationSeconds) },
   ];
 
@@ -213,10 +227,10 @@ export function UserProfile({
       <section className="mt-8">
         <Card className="p-2">
           <CardHeader>
-            <CardTitle>Progression des scores</CardTitle>
+            <CardTitle>Dimensions validées</CardTitle>
             <CardDescription>
               {chartData.length >= 2
-                ? `Évolution sur les ${chartData.length} derniers appels analysés.`
+                ? `Nombre de dimensions validées (sur 5) par appel, sur les ${chartData.length} derniers analysés.`
                 : "Pas assez de données pour le moment."}
             </CardDescription>
           </CardHeader>
@@ -243,7 +257,9 @@ export function UserProfile({
                     tick={{ fontSize: 12 }}
                   />
                   <YAxis
-                    domain={[0, 100]}
+                    domain={[0, 5]}
+                    ticks={[0, 1, 2, 3, 4, 5]}
+                    allowDecimals={false}
                     stroke="currentColor"
                     className="text-muted-foreground"
                     tick={{ fontSize: 12 }}
@@ -251,7 +267,7 @@ export function UserProfile({
                   <Tooltip content={<ChartTooltip />} />
                   <Line
                     type="monotone"
-                    dataKey="score"
+                    dataKey="validated"
                     stroke="#6366f1"
                     strokeWidth={2}
                     dot={{ r: 3, fill: "#6366f1" }}
@@ -319,10 +335,8 @@ export function UserProfile({
                             ? formatDuration(call.duration_seconds)
                             : "–"}
                         </span>
-                        <span className="min-w-10 text-right text-sm font-semibold tabular-nums">
-                          {call.score_global !== null
-                            ? `${call.score_global}%`
-                            : "–"}
+                        <span className="justify-self-end">
+                          <DimensionsDots dimensions={call.dimensions} />
                         </span>
                         <Badge
                           variant={STATUS_VARIANT[call.status] ?? "secondary"}

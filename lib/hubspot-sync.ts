@@ -62,6 +62,8 @@ export async function enrichCallFromHubspot(
       company_name: ctx.company?.name ?? null,
       deal_name: ctx.deal?.dealname ?? null,
       deal_id: ctx.deal?.id ?? null,
+      // Phase du deal (J25 phase 2) → vrai gagné/perdu pour les pipelines standard.
+      deal_stage: ctx.deal?.dealstage ?? null,
       hubspot_contact_id: ctx.contact.id,
       hubspot_enriched_at: new Date().toISOString(),
     })
