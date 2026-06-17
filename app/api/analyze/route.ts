@@ -34,6 +34,7 @@ import {
 } from '@/lib/hubspot'
 import type { HubspotTarget } from '@/lib/hubspot'
 import { enrichCallFromHubspot } from '@/lib/hubspot-sync'
+import { computeDealHygiene } from '@/lib/hygiene/compute'
 import { decryptSecret } from '@/lib/crypto/org-secrets'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { computeConversationMetrics } from '@/lib/metrics/conversation'
@@ -476,6 +477,31 @@ export async function POST(req: NextRequest) {
       .eq('id', callId)
     if (syncErr) {
       console.error('[analyze] update hubspot_sync_status échoué', syncErr.message)
+    }
+
+    // Hygiène de pipeline (J30) : recalcule l'hygiène du deal de cet appel avec
+    // les données FRAÎCHEMENT enrichies (deal_id/deal_stage posés ci-dessus).
+    // Best-effort, dans son propre try/catch → ne casse jamais le pipeline ni la
+    // synchro HubSpot. Le group_key se déduit de l'état persisté de l'appel.
+    try {
+      const { data: freshCall } = await supabase
+        .from('calls')
+        .select('deal_id, callee_number')
+        .eq('id', callId)
+        .maybeSingle()
+      const groupKey = freshCall?.deal_id
+        ? `deal:${freshCall.deal_id}`
+        : freshCall?.callee_number
+          ? `phone:${freshCall.callee_number}`
+          : null
+      if (groupKey) {
+        await computeDealHygiene(call.organization_id, groupKey)
+      }
+    } catch (e) {
+      console.error(
+        '[analyze] calcul hygiène échoué',
+        e instanceof Error ? e.message : 'unknown',
+      )
     }
   })
 

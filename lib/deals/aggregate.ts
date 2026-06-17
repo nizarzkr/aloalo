@@ -34,7 +34,7 @@ export type DealStatus = 'gagné' | 'perdu' | 'actif' | 'dormant'
 // (closedwon / closedlost). Les pipelines personnalisés utilisent des IDs de
 // stage propres au client → on ne devine pas, ils retombent sur l'activité
 // (la cartographie complète du tunnel viendra en Semaine 4).
-function closedStatusFromStage(stage: string | null): DealStatus | null {
+export function closedStatusFromStage(stage: string | null): DealStatus | null {
   if (!stage) return null
   const s = stage.toLowerCase()
   if (s === 'closedwon') return 'gagné'
@@ -59,7 +59,8 @@ export type DealSummary = {
 
 // Au-delà de ce délai sans appel, un deal est considéré « dormant ».
 const DORMANT_AFTER_DAYS = 30
-const DORMANT_AFTER_MS = DORMANT_AFTER_DAYS * 24 * 60 * 60 * 1000
+// Exporté pour que le moteur d'hygiène (J30) calcule le même statut actif/dormant.
+export const DORMANT_AFTER_MS = DORMANT_AFTER_DAYS * 24 * 60 * 60 * 1000
 
 // L'embed analyses (1-to-1) peut renvoyer objet ou tableau selon le client.
 type AnalysisRel = {

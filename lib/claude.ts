@@ -790,3 +790,231 @@ export async function proposeExitCriteria(
     },
   }
 }
+
+// ===========================================================================
+// J30 — Évaluation d'hygiène de pipeline (passe IA légère)
+// ===========================================================================
+// Pour UN deal : à partir des artefacts DÉJÀ analysés du dernier appel (résumé,
+// dimensions, signaux, next steps — PAS de re-transcription), Claude évalue :
+//   (1) critère par critère, si chaque critère de sortie de la phase courante est
+//       rempli (avec une citation/preuve) ;
+//   (2) si la réalité de l'appel CONTREDIT la phase CRM (« marqué Closing mais
+//       redemande une démo ») et dans quel sens (moins/plus avancé).
+// Même fiabilité que le reste : sortie forcée via tool use → JSON garanti.
+
+export type HygieneCriterionInput = { id: string; label: string }
+
+export type HygieneEvalInput = {
+  stageLabel: string
+  // Phases ouvertes du pipeline du deal, dans l'ordre (pour raisonner « avant/après »).
+  orderedOpenStages: { stageId: string; stageLabel: string }[]
+  criteria: HygieneCriterionInput[]
+  summary: string | null
+  dimensions: DimensionEval[] | null
+  behavioralSignals: BehavioralSignals | null
+  suggestedTasks: SuggestedTask[] | null
+}
+
+export type HygieneEvalOutput = {
+  exit_criteria: { id: string; met: boolean; evidence: string }[]
+  stage_mismatch: {
+    mismatch: boolean
+    reason: string
+    suggested_direction: 'earlier' | 'later' | 'none'
+  }
+}
+
+export type EvaluateDealHygieneResult = {
+  evaluation: HygieneEvalOutput
+  usage: { input_tokens: number; output_tokens: number }
+}
+
+const HYGIENE_TOOL: Anthropic.Tool = {
+  name: 'submit_hygiene_eval',
+  description:
+    "Soumet l'évaluation d'hygiène d'un deal : statut de chaque critère de sortie + cohérence phase/réalité. Tu DOIS appeler ce tool une seule fois.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      exit_criteria: {
+        type: 'array',
+        description:
+          "Un objet par critère de sortie qu'on t'a fourni (mêmes id, sans en inventer ni en oublier).",
+        items: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              description: "L'identifiant EXACT du critère, recopié depuis l'entrée.",
+            },
+            met: {
+              type: 'boolean',
+              description:
+                "true SEULEMENT si l'appel prouve que le critère est rempli. Dans le doute ou en l'absence de preuve : false.",
+            },
+            evidence: {
+              type: 'string',
+              description:
+                "Brève justification (idéalement une citation/élément de l'appel). Vide si non rempli.",
+            },
+          },
+          required: ['id', 'met', 'evidence'],
+        },
+      },
+      stage_mismatch: {
+        type: 'object',
+        properties: {
+          mismatch: {
+            type: 'boolean',
+            description:
+              "true si la réalité de l'appel contredit la phase CRM actuelle (ex: phase avancée mais le prospect redemande une démo / n'est pas qualifié).",
+          },
+          reason: {
+            type: 'string',
+            description:
+              "Explication courte et factuelle du décalage (vide si mismatch=false).",
+          },
+          suggested_direction: {
+            type: 'string',
+            enum: ['earlier', 'later', 'none'],
+            description:
+              "earlier si le deal semble MOINS avancé que sa phase, later s'il semble PLUS avancé, none sinon.",
+          },
+        },
+        required: ['mismatch', 'reason', 'suggested_direction'],
+      },
+    },
+    required: ['exit_criteria', 'stage_mismatch'],
+  },
+}
+
+function buildHygieneMessage(input: HygieneEvalInput): string {
+  const stagesLine = input.orderedOpenStages
+    .map((s, i) => `${i + 1}. ${s.stageLabel}`)
+    .join('  →  ')
+
+  const criteriaBlock = input.criteria
+    .map((c) => `  - [${c.id}] ${c.label}`)
+    .join('\n')
+
+  const dimsBlock = (input.dimensions ?? [])
+    .map((d) => `  - ${d.key} : ${d.status}${d.evidence ? ` (« ${d.evidence} »)` : ''}`)
+    .join('\n')
+
+  const sig = input.behavioralSignals
+  const sigBlock = sig
+    ? [
+        `  - Fermeté du next step : ${sig.next_step_firmness}`,
+        `  - Nature de l'objection : ${sig.objection_nature}${sig.objection_quote ? ` (« ${sig.objection_quote} »)` : ''}`,
+        `  - Signaux d'achat : ${sig.buying_signals.length}`,
+      ].join('\n')
+    : '  (aucun)'
+
+  const tasksBlock =
+    (input.suggestedTasks ?? []).length > 0
+      ? input.suggestedTasks!.map((t) => `  - ${t.title} (${t.due_date})`).join('\n')
+      : '  (aucune)'
+
+  return `Tu es l'assistant d'un responsable RevOps qui veille à l'HYGIÈNE de son pipeline HubSpot. À partir du dernier appel d'un deal (déjà analysé), tu vérifies deux choses, sans complaisance.
+
+PHASE CRM ACTUELLE du deal : « ${input.stageLabel} »
+Phases ouvertes du tunnel (ordre) : ${stagesLine || '(non fournies)'}
+
+CRITÈRES DE SORTIE de la phase actuelle (à statuer un par un) :
+${criteriaBlock || '  (aucun)'}
+
+--- Ce que révèle le dernier appel ---
+Résumé : ${input.summary ?? '(non disponible)'}
+
+Dimensions (statut factuel) :
+${dimsBlock || '  (non disponibles)'}
+
+Signaux comportementaux :
+${sigBlock}
+
+Prochaines étapes datées détectées :
+${tasksBlock}
+
+Consignes :
+1) Pour CHAQUE critère listé (reprends exactement son id), dis s'il est rempli (met) en t'appuyant sur l'appel. En l'absence de preuve claire : met=false.
+2) Évalue si la réalité de l'appel CONTREDIT la phase CRM actuelle (mismatch), et dans quel sens (earlier/later/none). Ne signale un mismatch que s'il est manifeste.
+Appelle ensuite le tool \`submit_hygiene_eval\`.`
+}
+
+/**
+ * Évalue l'hygiène d'un deal (critères de sortie + cohérence phase/réalité) à
+ * partir des artefacts du dernier appel. La sortie est NORMALISÉE sur les
+ * critères DEMANDÉS : un critère omis par l'IA est compté non rempli (met=false,
+ * conservateur), et tout id non demandé est ignoré (anti-hallucination).
+ */
+export async function evaluateDealHygiene(
+  input: HygieneEvalInput,
+): Promise<EvaluateDealHygieneResult> {
+  const client = getClient()
+  const message = buildHygieneMessage(input)
+
+  const response = await client.messages.create({
+    model: ANALYSIS_MODEL,
+    max_tokens: 1536,
+    temperature: 0,
+    tools: [HYGIENE_TOOL],
+    tool_choice: { type: 'tool', name: 'submit_hygiene_eval' },
+    messages: [{ role: 'user', content: message }],
+  })
+
+  const toolUseBlock = response.content.find(
+    (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
+  )
+  if (!toolUseBlock || toolUseBlock.name !== 'submit_hygiene_eval') {
+    throw new Error(
+      `Claude n'a pas appelé submit_hygiene_eval (stop_reason=${response.stop_reason})`,
+    )
+  }
+
+  const raw = toolUseBlock.input as {
+    exit_criteria?: Array<{ id?: string; met?: boolean; evidence?: string }>
+    stage_mismatch?: {
+      mismatch?: boolean
+      reason?: string
+      suggested_direction?: string
+    }
+  }
+
+  // Normalisation sur les critères demandés : on indexe la réponse par id, puis
+  // on reconstruit dans l'ordre d'entrée (omission ⇒ non rempli).
+  const byId = new Map(
+    (raw.exit_criteria ?? [])
+      .filter((e) => typeof e.id === 'string')
+      .map((e) => [e.id as string, e]),
+  )
+  const exit_criteria = input.criteria.map((c) => {
+    const ans = byId.get(c.id)
+    return {
+      id: c.id,
+      met: ans?.met === true,
+      evidence: typeof ans?.evidence === 'string' ? ans.evidence : '',
+    }
+  })
+
+  const dir = raw.stage_mismatch?.suggested_direction
+  const suggested_direction: HygieneEvalOutput['stage_mismatch']['suggested_direction'] =
+    dir === 'earlier' || dir === 'later' ? dir : 'none'
+
+  return {
+    evaluation: {
+      exit_criteria,
+      stage_mismatch: {
+        mismatch: raw.stage_mismatch?.mismatch === true,
+        reason:
+          typeof raw.stage_mismatch?.reason === 'string'
+            ? raw.stage_mismatch.reason
+            : '',
+        suggested_direction,
+      },
+    },
+    usage: {
+      input_tokens: response.usage.input_tokens,
+      output_tokens: response.usage.output_tokens,
+    },
+  }
+}
