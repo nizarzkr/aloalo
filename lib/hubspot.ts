@@ -779,6 +779,91 @@ export async function createTask(
 }
 
 // ============================================================================
+// 6. getDealPipelines — carte du tunnel HubSpot (pipelines + stages). J27.
+// ============================================================================
+// Lit `GET /crm/v3/pipelines/deals` : tous les pipelines de DEALS du portail,
+// chacun avec ses stages (id, libellé, ordre d'affichage) et leurs métadonnées
+// utiles : `isClosed` (le stage clôt-il le deal ?) et `probability` (0→1). Ces
+// deux champs serviront en Semaine 4 à reconnaître « gagné/perdu » même sur les
+// pipelines PERSONNALISÉS (stages à IDs propres), ce que J25 ne savait pas faire.
+//
+// On renvoie une structure nettoyée et TRIÉE par displayOrder (l'ordre du tunnel
+// est porteur de sens). Robuste : [] en cas d'échec, ne logge jamais le token.
+export type HubspotPipelineStage = {
+  id: string;
+  label: string;
+  displayOrder: number;
+  // Le stage clôt-il le deal (colonne « gagné/perdu » du tunnel) ?
+  isClosed: boolean;
+  // Probabilité de closing associée au stage (0→1), ou null si non définie.
+  probability: number | null;
+};
+
+export type HubspotPipeline = {
+  id: string;
+  label: string;
+  displayOrder: number;
+  stages: HubspotPipelineStage[];
+};
+
+export async function getDealPipelines(
+  token: string,
+): Promise<HubspotPipeline[]> {
+  if (!token) return [];
+
+  const res = await hubspotFetch("/crm/v3/pipelines/deals", token);
+  if (!res || !res.ok) {
+    if (res) {
+      console.error("[hubspot] getDealPipelines failed", { status: res.status });
+    }
+    return [];
+  }
+
+  try {
+    const data = (await res.json()) as {
+      results?: Array<{
+        id: string;
+        label?: string;
+        displayOrder?: number;
+        stages?: Array<{
+          id: string;
+          label?: string;
+          displayOrder?: number;
+          metadata?: Record<string, string | null>;
+        }>;
+      }>;
+    };
+
+    const pipelines: HubspotPipeline[] = (data.results ?? []).map((p) => ({
+      id: p.id,
+      label: p.label ?? p.id,
+      displayOrder: Number(p.displayOrder) || 0,
+      stages: (p.stages ?? [])
+        .map((s) => {
+          // metadata.probability est une string ("0.2") ou absente.
+          const rawProb = s.metadata?.probability;
+          const prob =
+            rawProb != null && rawProb !== "" && Number.isFinite(Number(rawProb))
+              ? Number(rawProb)
+              : null;
+          return {
+            id: s.id,
+            label: s.label ?? s.id,
+            displayOrder: Number(s.displayOrder) || 0,
+            isClosed: String(s.metadata?.isClosed).toLowerCase() === "true",
+            probability: prob,
+          };
+        })
+        .sort((a, b) => a.displayOrder - b.displayOrder),
+    }));
+
+    return pipelines.sort((a, b) => a.displayOrder - b.displayOrder);
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================================
 // Helpers de formatage avant écriture CRM (partagés /api/analyze ⇄ J26).
 // ============================================================================
 // Extraits de /api/analyze (issue #28) pour être réutilisés par l'action

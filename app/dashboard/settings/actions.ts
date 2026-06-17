@@ -16,6 +16,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 import { decryptSecret, encryptSecret } from "@/lib/crypto/org-secrets";
 import { testHubspotConnection } from "@/lib/hubspot";
+import { syncOrgPipelines } from "@/lib/hubspot-pipelines";
 import { createClient } from "@/lib/supabase/server";
 import {
   AiProfileSchema,
@@ -373,6 +374,14 @@ export async function updateHubspotSettings(
   }
 
   const connection = await testHubspotConnection(tokenToTest);
+
+  // Connexion OK → on lit dans la foulée la carte du tunnel (pipelines + stages)
+  // et on la stocke (J27). Best-effort : un échec ne casse pas la connexion
+  // (syncOrgPipelines est déjà robuste et n'écrase pas une carte existante).
+  if (connection === "connected") {
+    await syncOrgPipelines(profile.organization_id, tokenToTest);
+  }
+
   const message =
     connection === "connected"
       ? "HubSpot connecté."
@@ -381,5 +390,57 @@ export async function updateHubspotSettings(
         : "Connexion enregistrée, test impossible (HubSpot injoignable).";
 
   return { ok: true, message, connection };
+}
+
+// ============================================================================
+// refreshHubspotPipelines — relit la carte du tunnel depuis HubSpot (J27)
+// ============================================================================
+// Action du bouton « Rafraîchir le tunnel » (page Intégrations). Re-synchronise
+// pipelines + stages si le client a modifié son tunnel côté HubSpot. Owner only
+// (touche la config de l'org), token déchiffré côté serveur.
+export type PipelineRefreshResult =
+  | { ok: true; message: string }
+  | { ok: false; error: string };
+
+export async function refreshHubspotPipelines(): Promise<PipelineRefreshResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Session expirée. Reconnectez-vous." };
+
+  const admin = getAdminClient();
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("organization_id, role")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.organization_id) return { ok: false, error: "Profil introuvable." };
+  if (profile.role !== "owner") {
+    return { ok: false, error: "Seul le propriétaire peut rafraîchir le tunnel." };
+  }
+
+  const { data: org } = await admin
+    .from("organizations")
+    .select("hubspot_token")
+    .eq("id", profile.organization_id)
+    .single();
+  const token = decryptSecret(org?.hubspot_token ?? null);
+  if (!token) return { ok: false, error: "HubSpot n'est pas connecté." };
+
+  const result = await syncOrgPipelines(profile.organization_id, token);
+  revalidatePath("/dashboard/settings/integrations");
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: "Lecture du tunnel impossible (HubSpot injoignable ou token refusé).",
+    };
+  }
+  return {
+    ok: true,
+    message: `Tunnel synchronisé : ${result.pipelineCount} pipeline${result.pipelineCount > 1 ? "s" : ""}, ${result.stageCount} phases.`,
+  };
 }
 

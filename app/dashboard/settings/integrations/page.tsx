@@ -7,8 +7,11 @@ import { Cable } from "lucide-react";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 import { hasSecret } from "@/lib/crypto/org-secrets";
+import { getOrgPipelines } from "@/lib/hubspot-pipelines";
+import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { HubspotSettingsForm } from "@/components/dashboard/hubspot-settings-form";
+import { PipelineRefreshButton } from "@/components/dashboard/pipeline-refresh-button";
 import { RingoverKeyForm } from "@/components/dashboard/ringover-key-form";
 import { SectionHeading } from "@/components/dashboard/section-heading";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +63,12 @@ export default async function IntegrationsSettingsPage() {
   const hasRingoverKey = hasSecret(org?.ringover_api_key);
   const hasHubspotToken = hasSecret(org?.hubspot_token);
   const hubspotPortalId = org?.hubspot_portal_id ?? "";
+
+  // Carte du tunnel HubSpot (J27) — affichée si HubSpot est connecté.
+  const { pipelines, syncedAt } =
+    isOwner && profile?.organization_id && hasHubspotToken
+      ? await getOrgPipelines(profile.organization_id)
+      : { pipelines: [], syncedAt: null };
 
   // URL du webhook Ringover — basée sur NEXT_PUBLIC_APP_URL (prod/preview).
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") ?? "";
@@ -178,12 +187,86 @@ export default async function IntegrationsSettingsPage() {
                 )}
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
               <HubspotSettingsForm
                 canEdit={isOwner}
                 hasToken={hasHubspotToken}
                 defaultPortalId={hubspotPortalId}
               />
+
+              {/* --- Tunnel HubSpot (J27) : carte des pipelines + phases ---- */}
+              {hasHubspotToken ? (
+                <div className="space-y-3 border-t border-border pt-6">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-medium">Tunnel HubSpot</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        La carte de vos pipelines de deals, lue depuis HubSpot.
+                        Elle servira à lire chaque appel selon la phase du deal.
+                      </p>
+                    </div>
+                    <PipelineRefreshButton />
+                  </div>
+
+                  {pipelines.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Tunnel pas encore synchronisé. Cliquez sur « Rafraîchir le
+                      tunnel » pour le lire depuis HubSpot.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      {pipelines.map((p) => (
+                        <div
+                          key={p.id}
+                          className="rounded-md border border-border bg-muted/30 p-3"
+                        >
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium">{p.label}</p>
+                            <code className="font-mono text-[10px] text-muted-foreground">
+                              {p.id}
+                            </code>
+                          </div>
+                          <ol className="flex flex-wrap items-center gap-1.5">
+                            {p.stages.map((s, i) => (
+                              <li key={s.id}>
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs",
+                                    s.isClosed
+                                      ? "bg-mint text-foreground"
+                                      : "border border-border bg-background text-foreground",
+                                  )}
+                                  title={
+                                    s.probability != null
+                                      ? `Probabilité : ${Math.round(s.probability * 100)}%`
+                                      : undefined
+                                  }
+                                >
+                                  <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
+                                    {i + 1}
+                                  </span>
+                                  {s.label}
+                                </span>
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+                      ))}
+                      {syncedAt ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          Dernière synchronisation :{" "}
+                          {new Date(syncedAt).toLocaleString("fr-FR", {
+                            day: "2-digit",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         ) : null}
