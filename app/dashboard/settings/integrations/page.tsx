@@ -8,12 +8,12 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 import { hasSecret } from "@/lib/crypto/org-secrets";
 import { getOrgPipelines } from "@/lib/hubspot-pipelines";
-import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { HubspotSettingsForm } from "@/components/dashboard/hubspot-settings-form";
 import { PipelineRefreshButton } from "@/components/dashboard/pipeline-refresh-button";
 import { RingoverKeyForm } from "@/components/dashboard/ringover-key-form";
 import { SectionHeading } from "@/components/dashboard/section-heading";
+import { TunnelPreview } from "@/components/dashboard/tunnel-preview";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -214,56 +214,7 @@ export default async function IntegrationsSettingsPage() {
                       tunnel » pour le lire depuis HubSpot.
                     </p>
                   ) : (
-                    <div className="space-y-4">
-                      {pipelines.map((p) => (
-                        <div
-                          key={p.id}
-                          className="rounded-md border border-border bg-muted/30 p-3"
-                        >
-                          <div className="mb-2 flex items-center justify-between gap-2">
-                            <p className="text-sm font-medium">{p.label}</p>
-                            <code className="font-mono text-[10px] text-muted-foreground">
-                              {p.id}
-                            </code>
-                          </div>
-                          <ol className="flex flex-wrap items-center gap-1.5">
-                            {p.stages.map((s, i) => (
-                              <li key={s.id}>
-                                <span
-                                  className={cn(
-                                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs",
-                                    s.isClosed
-                                      ? "bg-mint text-foreground"
-                                      : "border border-border bg-background text-foreground",
-                                  )}
-                                  title={
-                                    s.probability != null
-                                      ? `Probabilité : ${Math.round(s.probability * 100)}%`
-                                      : undefined
-                                  }
-                                >
-                                  <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
-                                    {i + 1}
-                                  </span>
-                                  {s.label}
-                                </span>
-                              </li>
-                            ))}
-                          </ol>
-                        </div>
-                      ))}
-                      {syncedAt ? (
-                        <p className="text-[11px] text-muted-foreground">
-                          Dernière synchronisation :{" "}
-                          {new Date(syncedAt).toLocaleString("fr-FR", {
-                            day: "2-digit",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      ) : null}
-                    </div>
+                    <TunnelPreview pipelines={pipelines} syncedAt={syncedAt} />
                   )}
                 </div>
               ) : null}

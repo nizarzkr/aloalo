@@ -13,10 +13,12 @@ import {
 import { CallStatusBadge } from "@/components/dashboard/call-status-badge";
 import { DimensionsDots } from "@/components/dashboard/dimensions-dots";
 import { ListAutoRefresh } from "@/components/dashboard/list-auto-refresh";
+import { OnboardingBanner } from "@/components/dashboard/onboarding-banner";
 import { revalidateDashboardHome } from "@/app/dashboard/calls/actions";
 import { createClient } from "@/lib/supabase/server";
 import { buildSignature, IN_PROGRESS_STATUSES } from "@/lib/call-status";
 import { aggregateOrgDeals } from "@/lib/deals/aggregate";
+import { getOnboardingState, ONBOARDING_STEPS } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 
 // Début de la semaine en cours (lundi 00:00 dans la timezone du serveur).
@@ -53,13 +55,22 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, organization_id")
+    .select("full_name, role, organization_id")
     .eq("id", user.id)
     .single();
 
   const fullName = profile?.full_name ?? "";
   const firstName = fullName.trim().split(/\s+/)[0] || "";
   const orgId = profile?.organization_id ?? null;
+
+  // Bandeau de reprise d'onboarding (J29) : visible uniquement pour un owner qui
+  // a « passé pour l'instant » (sinon le layout l'aurait redirigé vers
+  // /onboarding). Disparaît une fois l'onboarding terminé.
+  const onboarding =
+    profile?.role === "owner" && orgId
+      ? await getOnboardingState(orgId)
+      : null;
+  const showOnboardingBanner = onboarding != null && !onboarding.completedAt;
 
   // Bornes temporelles pour les KPI
   const now = new Date();
@@ -147,6 +158,13 @@ export default async function DashboardPage() {
           {firstName ? `Bienvenue, ${firstName}` : "Bienvenue"}
         </h1>
       </header>
+
+      {showOnboardingBanner ? (
+        <OnboardingBanner
+          doneCount={onboarding.doneCount}
+          totalSteps={ONBOARDING_STEPS.length}
+        />
+      ) : null}
 
       {/* Moteur de rafraîchissement automatique (invisible) : met à jour les
           badges des derniers appels tant qu'un appel est en cours. */}

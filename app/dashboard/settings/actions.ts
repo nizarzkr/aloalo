@@ -193,6 +193,10 @@ export async function updateRingoverApiKey(
   }
 
   revalidatePath("/dashboard/settings");
+  // L'assistant d'onboarding (J29) réutilise ce formulaire : on revalide aussi
+  // /onboarding pour que la pastille « Téléphonie » du stepper passe à « fait »
+  // sans navigation.
+  revalidatePath("/onboarding");
 
   return { ok: true, message: "Clé API Ringover enregistrée." };
 }
@@ -368,6 +372,10 @@ export async function updateHubspotSettings(
   }
 
   revalidatePath("/dashboard/settings");
+  // L'assistant d'onboarding (J29) réutilise ce formulaire : revalider /onboarding
+  // fait apparaître l'aperçu du tunnel (le « waouh ») et met à jour le stepper
+  // dès la connexion, sans navigation.
+  revalidatePath("/onboarding");
 
   // Aucun token nulle part → rien à tester.
   if (!tokenToTest) {

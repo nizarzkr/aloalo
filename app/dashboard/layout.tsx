@@ -1,6 +1,11 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { Sidebar } from "@/components/dashboard/sidebar";
+import {
+  getOnboardingState,
+  ONBOARDING_SNOOZE_COOKIE,
+} from "@/lib/onboarding";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardLayout({
@@ -22,9 +27,21 @@ export default async function DashboardLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, email, organizations ( name )")
+    .select("full_name, email, role, organization_id, organizations ( name )")
     .eq("id", user.id)
     .single();
+
+  // Redirection douce vers l'onboarding (J29) : seul l'OWNER d'une org dont le
+  // parcours n'est pas terminé y est renvoyé, sauf s'il a cliqué « passer pour
+  // l'instant » (cookie de snooze). Les manager/sales ne sont jamais redirigés.
+  if (profile?.role === "owner" && profile.organization_id) {
+    const snoozed =
+      (await cookies()).get(ONBOARDING_SNOOZE_COOKIE)?.value === "1";
+    if (!snoozed) {
+      const { completedAt } = await getOnboardingState(profile.organization_id);
+      if (!completedAt) redirect("/onboarding");
+    }
+  }
 
   // Embed Supabase d'une FK : la relation est typée comme objet ou tableau
   // selon la cardinalité détectée — on normalise en lecture.
