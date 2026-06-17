@@ -30,8 +30,13 @@ import type { ConversationMetrics } from "@/lib/metrics/conversation";
 import type { BehavioralSignals } from "@/lib/claude";
 import { getContactEmailSignals } from "@/lib/hubspot";
 import { buildAlertForDeal } from "@/lib/metrics/coaching-alert";
-import { hasPushedCoachingAction } from "@/lib/deals/pushed-actions";
+import {
+  hasPushedCoachingAction,
+  getPushedHygieneActions,
+} from "@/lib/deals/pushed-actions";
+import { getDealHygiene } from "@/lib/hygiene/compute";
 import { PushHubspotActionButton } from "@/components/dashboard/push-hubspot-action-button";
+import { DealHygienePanel } from "@/components/dashboard/deal-hygiene-panel";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -195,6 +200,12 @@ export default async function DealMomentumPage({
     ? await hasPushedCoachingAction(orgFilter, decoded)
     : false;
 
+  // Hygiène du deal (J30) + corrections déjà poussées (J31).
+  const [hygieneReport, pushedHygieneKeys] = await Promise.all([
+    getDealHygiene(orgFilter, decoded),
+    getPushedHygieneActions(orgFilter),
+  ]);
+
   const callById = new Map(calls.map((c) => [c.id, c]));
   const dateFmt = (iso: string) =>
     new Date(iso).toLocaleString("fr-FR", {
@@ -319,6 +330,13 @@ export default async function DealMomentumPage({
           ) : null}
         </CardContent>
       </Card>
+
+      {/* Hygiène du deal (J31) : écarts dit/CRM + correction 1 clic. */}
+      <DealHygienePanel
+        groupKey={decoded}
+        report={hygieneReport}
+        pushedKeys={pushedHygieneKeys}
+      />
 
       {/* Momentum CRM (off-call) — affiché seulement si HubSpot a des données */}
       <Card className="mb-8">

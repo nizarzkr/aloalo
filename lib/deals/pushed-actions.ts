@@ -61,3 +61,36 @@ export async function hasPushedCoachingAction(
 
   return Boolean(data)
 }
+
+// --- Corrections d'hygiène (J31) --------------------------------------------
+
+// Clé composite « deal + type d'action » → l'UI sait, en O(1), si la correction
+// d'un écart donné a déjà été poussée. Aligné avec hygieneActionType().
+function compositeKey(groupKey: string, actionType: string): string {
+  return `${groupKey}::${actionType}`
+}
+
+/**
+ * Ensemble des corrections d'hygiène déjà poussées dans HubSpot pour une org,
+ * sous forme de clés `${group_key}::${action_type}` (action_type = `hygiene:<gapType>`).
+ * Sert aux surfaces J31 (liste deals, accueil, trajectoire) pour afficher
+ * « Corrigé ✓ » par écart sans requête par carte.
+ */
+export async function getPushedHygieneActions(
+  orgId: string,
+): Promise<Set<string>> {
+  const { data } = await admin()
+    .from('deal_pushed_actions')
+    .select('group_key, action_type')
+    .eq('organization_id', orgId)
+    .like('action_type', 'hygiene:%')
+
+  return new Set(
+    (data ?? []).map((r) =>
+      compositeKey(r.group_key as string, r.action_type as string),
+    ),
+  )
+}
+
+// Exporté pour que l'UI compose la même clé que getPushedHygieneActions.
+export { compositeKey as hygienePushedKey }

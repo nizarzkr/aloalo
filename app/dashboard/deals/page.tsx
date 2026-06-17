@@ -22,8 +22,16 @@ import { createClient } from "@/lib/supabase/server";
 import { aggregateOrgDeals, type DealSummary } from "@/lib/deals/aggregate";
 import { severityRank } from "@/lib/metrics/coaching-alert";
 import { getPushedCoachingKeys } from "@/lib/deals/pushed-actions";
+import { getOrgHygiene } from "@/lib/hygiene/compute";
+import { topSeverity } from "@/lib/hygiene/rules";
+import type { HygieneSeverity } from "@/lib/hygiene/types";
 import { PushHubspotActionButton } from "@/components/dashboard/push-hubspot-action-button";
+import { DealHygieneBadge } from "@/components/dashboard/deal-hygiene-badge";
+import { AnalyzePipelineButton } from "@/components/dashboard/analyze-pipeline-button";
 import { cn } from "@/lib/utils";
+
+// Résumé d'hygiène d'un deal (pour la pastille de la carte).
+type HygieneSummary = { count: number; severity: HygieneSeverity | null };
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +40,7 @@ type DealsSearchParams = {
   risk?: string;
   owner?: string;
   sort?: string;
+  hyg?: string;
 };
 
 // Libellé + style du badge de statut deal. Gagné/perdu viennent de la phase
@@ -66,7 +75,7 @@ export default async function DealsListPage({
 }: {
   searchParams: Promise<DealsSearchParams>;
 }) {
-  const { q, risk, owner, sort } = await searchParams;
+  const { q, risk, owner, sort, hyg } = await searchParams;
 
   const supabase = await createClient();
   const {
@@ -89,11 +98,24 @@ export default async function DealsListPage({
     );
   }
 
-  const [allDeals, pushedKeys] = await Promise.all([
+  const [allDeals, pushedKeys, hygieneReports] = await Promise.all([
     aggregateOrgDeals(profile.organization_id),
     // Clés de deals dont l'alerte a déjà été poussée dans HubSpot (J26).
     getPushedCoachingKeys(profile.organization_id),
+    // Rapports d'hygiène en cache (J30) → pastille par carte (J31).
+    getOrgHygiene(profile.organization_id),
   ]);
+
+  // Résumé d'hygiène par deal (nb d'écarts + sévérité max) pour la pastille.
+  const hygieneByKey = new Map<string, HygieneSummary>();
+  for (const r of hygieneReports) {
+    if (r.gaps.length > 0) {
+      hygieneByKey.set(r.group_key, {
+        count: r.gaps.length,
+        severity: topSeverity(r.gaps),
+      });
+    }
+  }
 
   // Options du filtre commercial = propriétaires distincts présents dans les deals.
   const ownerMap = new Map<string, string>();
@@ -117,6 +139,9 @@ export default async function DealsListPage({
   if (risk === "risk") {
     deals = deals.filter((d) => d.alert != null);
   }
+  if (hyg === "gaps") {
+    deals = deals.filter((d) => hygieneByKey.has(d.group_key));
+  }
   if (owner && owner !== "all") {
     deals = deals.filter((d) => d.owner_id === owner);
   }
@@ -127,7 +152,12 @@ export default async function DealsListPage({
     if (sortMode === "risk") {
       const r = severityRank(a.alert) - severityRank(b.alert);
       if (r !== 0) return r;
-      // À sévérité égale, engagement final le plus bas en tête.
+      // À sévérité d'alerte égale : un deal avec des écarts d'hygiène passe
+      // devant un deal propre (les deux signaux « ce deal a besoin de toi »).
+      const ha = hygieneByKey.has(a.group_key) ? 0 : 1;
+      const hb = hygieneByKey.has(b.group_key) ? 0 : 1;
+      if (ha !== hb) return ha - hb;
+      // Puis engagement final le plus bas en tête.
       const ea = a.momentum.last_engagement ?? 100;
       const eb = b.momentum.last_engagement ?? 100;
       if (ea !== eb) return ea - eb;
@@ -137,25 +167,38 @@ export default async function DealsListPage({
   });
 
   const atRiskCount = allDeals.filter((d) => d.alert != null).length;
+  const hygieneCount = hygieneByKey.size;
   const hasAnyDeal = allDeals.length > 0;
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10 md:px-10">
-      <header className="mb-8">
-        <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">
-          Deals
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {allDeals.length} deal{allDeals.length > 1 ? "s" : ""}
-          {atRiskCount > 0 ? (
-            <>
-              {" · "}
-              <span className="font-medium text-red-600">
-                {atRiskCount} à risque
-              </span>
-            </>
-          ) : null}
-        </p>
+      <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">
+            Deals
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {allDeals.length} deal{allDeals.length > 1 ? "s" : ""}
+            {atRiskCount > 0 ? (
+              <>
+                {" · "}
+                <span className="font-medium text-red-600">
+                  {atRiskCount} à risque
+                </span>
+              </>
+            ) : null}
+            {hygieneCount > 0 ? (
+              <>
+                {" · "}
+                <span className="font-medium text-foreground">
+                  {hygieneCount} à nettoyer
+                </span>
+              </>
+            ) : null}
+          </p>
+        </div>
+        {/* Calcul d'hygiène à la demande (1er passage / deals d'avant J30). */}
+        {hasAnyDeal ? <AnalyzePipelineButton /> : null}
       </header>
 
       {!hasAnyDeal ? (
@@ -182,7 +225,11 @@ export default async function DealsListPage({
             <ul className="grid gap-4 sm:grid-cols-2">
               {deals.map((d) => (
                 <li key={d.group_key}>
-                  <DealCard deal={d} alreadyPushed={pushedKeys.has(d.group_key)} />
+                  <DealCard
+                    deal={d}
+                    alreadyPushed={pushedKeys.has(d.group_key)}
+                    hygiene={hygieneByKey.get(d.group_key) ?? null}
+                  />
                 </li>
               ))}
             </ul>
@@ -196,9 +243,11 @@ export default async function DealsListPage({
 function DealCard({
   deal,
   alreadyPushed,
+  hygiene,
 }: {
   deal: DealSummary;
   alreadyPushed: boolean;
+  hygiene: HygieneSummary | null;
 }) {
   const { momentum, alert } = deal;
   const trend = momentum.trend;
@@ -234,9 +283,17 @@ function DealCard({
             {deal.calls_count} appel{deal.calls_count > 1 ? "s" : ""}
           </p>
         </div>
-        <Badge className={cn("shrink-0", STATUS_BADGE[deal.status].className)}>
-          {STATUS_BADGE[deal.status].label}
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <Badge className={cn(STATUS_BADGE[deal.status].className)}>
+            {STATUS_BADGE[deal.status].label}
+          </Badge>
+          {hygiene ? (
+            <DealHygieneBadge
+              count={hygiene.count}
+              severity={hygiene.severity}
+            />
+          ) : null}
+        </div>
       </div>
 
       {/* Mini-tendance d'engagement (barres) */}

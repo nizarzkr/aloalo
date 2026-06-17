@@ -33,6 +33,9 @@ import {
 } from '@/lib/hubspot'
 import { aggregateOrgDeals } from '@/lib/deals/aggregate'
 import type { CoachingAlert } from '@/lib/metrics/coaching-alert'
+import { computeDealHygiene } from '@/lib/hygiene/compute'
+import { hygieneActionType } from '@/lib/hygiene/rules'
+import type { HygieneGap, HygieneGapType } from '@/lib/hygiene/types'
 
 export type PushActionResult =
   | { ok: true; already: boolean }
@@ -42,6 +45,7 @@ export type PushActionResult =
         | 'unauthorized'
         | 'not_connected'
         | 'no_alert'
+        | 'no_gap'
         | 'no_target'
         | 'hubspot_error'
     }
@@ -224,4 +228,176 @@ export async function pushCoachingAction(
   revalidatePath(`/dashboard/deals/${encodeURIComponent(groupKey)}`)
 
   return { ok: true, already: false }
+}
+
+// ============================================================================
+// J31 — Corriger un écart d'hygiène en 1 clic (Pipeline Hygiene Engine 2/2)
+// ============================================================================
+// Même geste agentic que pushCoachingAction, mais à partir d'un ÉCART d'hygiène
+// (J30) : on pousse une TÂCHE de correction dans HubSpot (jamais une mutation de
+// phase — non destructif, cf. décision J31). Mêmes garde-fous : serveur souverain
+// (on recalcule l'hygiène, on ne fait pas confiance au navigateur), idempotent
+// (1 trace par deal + type d'écart), tracé, dégradé proprement.
+// ============================================================================
+
+// Compose le corps de la tâche de correction depuis l'écart recalculé : le
+// constat, les critères non remplis et l'indice de phase éventuel. Assaini +
+// cappé avant écriture CRM (issue #28), comme buildTaskBody.
+function buildHygieneTaskBody(gap: HygieneGap): string {
+  const criteria =
+    gap.unmet_criteria && gap.unmet_criteria.length > 0
+      ? `\nCritères de sortie non remplis :\n${gap.unmet_criteria
+          .map((c) => `• ${c.label}`)
+          .join('\n')}`
+      : ''
+  const hint = gap.suggested_stage_hint ? `\n${gap.suggested_stage_hint}` : ''
+  const body = [
+    `Hygiène pipeline Aloalo — ${gap.title}.`,
+    `\n${gap.detail}`,
+    criteria,
+    hint,
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  return sanitizeForHubspot(body, 2000, true)
+}
+
+/**
+ * Pousse la correction d'UN écart d'hygiène d'un deal vers HubSpot (tâche).
+ * @param groupKey clé du deal (`deal:<id>` | `phone:<num>`).
+ * @param gapType  type d'écart à corriger (cf. lib/hygiene/types).
+ */
+export async function pushHygieneFix(
+  groupKey: string,
+  gapType: HygieneGapType,
+): Promise<PushActionResult> {
+  // 1. Auth + org.
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { ok: false, reason: 'unauthorized' }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('organization_id')
+    .eq('id', user.id)
+    .single()
+  const orgId = profile?.organization_id as string | undefined
+  if (!orgId) return { ok: false, reason: 'unauthorized' }
+
+  const admin = adminClient()
+  const actionType = hygieneActionType(gapType)
+
+  // 2. Idempotence : cet écart précis a-t-il déjà été corrigé ?
+  const { data: existing } = await admin
+    .from('deal_pushed_actions')
+    .select('id')
+    .eq('organization_id', orgId)
+    .eq('group_key', groupKey)
+    .eq('action_type', actionType)
+    .maybeSingle()
+  if (existing) return { ok: true, already: true }
+
+  // 3. Token HubSpot (chiffré au repos).
+  const { data: org } = await admin
+    .from('organizations')
+    .select('hubspot_token')
+    .eq('id', orgId)
+    .maybeSingle()
+  const token = decryptSecret((org?.hubspot_token as string | null) ?? null)
+  if (!token) return { ok: false, reason: 'not_connected' }
+
+  // 4. Recalcule l'hygiène côté serveur (source de vérité — jamais le client)
+  //    et retrouve l'écart par son type. Le cache court-circuite (pas de coût IA
+  //    si rien n'a bougé depuis le dernier calcul).
+  const report = await computeDealHygiene(orgId, groupKey)
+  const gap = report?.gaps.find((g) => g.type === gapType)
+  if (!gap) return { ok: false, reason: 'no_gap' }
+
+  // 5. Cible HubSpot (deal en priorité, sinon contact) — réutilise resolveTarget.
+  const target = await resolveTarget(admin, orgId, groupKey, token)
+  if (!target) return { ok: false, reason: 'no_target' }
+
+  // 6. Tâche de correction dans HubSpot.
+  const title = sanitizeForHubspot(`Aloalo — Hygiène : ${gap.title}`, 250)
+  const taskId = await createTask(
+    target,
+    title,
+    resolveDueDateMs(null), // J+2 par défaut.
+    token,
+    buildHygieneTaskBody(gap),
+  )
+  if (!taskId) return { ok: false, reason: 'hubspot_error' }
+
+  // 7. Trace (idempotence persistée). 23505 = course → déjà fait.
+  const { error: insertErr } = await admin.from('deal_pushed_actions').insert({
+    organization_id: orgId,
+    group_key: groupKey,
+    action_type: actionType,
+    hubspot_object_type: target.type,
+    hubspot_object_id: target.id,
+    hubspot_task_id: taskId,
+    action_text: gap.title,
+    pushed_by: user.id,
+  })
+  if (insertErr && insertErr.code !== '23505') {
+    console.error('[deals] trace correction hygiène échouée', insertErr.message)
+  }
+
+  // 8. Rafraîchit les surfaces.
+  revalidatePath('/dashboard/deals')
+  revalidatePath(`/dashboard/deals/${encodeURIComponent(groupKey)}`)
+  revalidatePath('/dashboard')
+
+  return { ok: true, already: false }
+}
+
+// ============================================================================
+// J31 — « Analyser le pipeline » : (re)calcule l'hygiène de tous les deals
+// ============================================================================
+// Les rapports d'hygiène sont normalement rafraîchis par le pipeline d'analyse
+// (J30, after()). Mais les deals analysés AVANT J30 n'en ont pas. Ce déclencheur
+// manuel (réservé owner/manager) calcule l'hygiène de chaque deal de l'org. Le
+// cache court-circuite ce qui n'a pas bougé → coût IA borné (et nul sur les deals
+// sans critères de sortie, ex. données simulées).
+
+export type RefreshHygieneResult =
+  | { ok: true; computed: number }
+  | { ok: false; reason: 'unauthorized' }
+
+export async function refreshOrgHygiene(): Promise<RefreshHygieneResult> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { ok: false, reason: 'unauthorized' }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('organization_id, role')
+    .eq('id', user.id)
+    .single()
+  const orgId = profile?.organization_id as string | undefined
+  const role = profile?.role as string | undefined
+  // Action de pilotage : réservée aux owner/manager (un sales ne nettoie pas le
+  // pipeline de toute l'équipe).
+  if (!orgId || (role !== 'owner' && role !== 'manager')) {
+    return { ok: false, reason: 'unauthorized' }
+  }
+
+  const deals = await aggregateOrgDeals(orgId)
+  let computed = 0
+  // Séquentiel : on reste doux avec l'API Anthropic (les passes IA sont rares,
+  // seulement pour les phases à critères) et on évite tout pic de concurrence.
+  for (const d of deals) {
+    const report = await computeDealHygiene(orgId, d.group_key)
+    if (report) computed += 1
+  }
+
+  revalidatePath('/dashboard/deals')
+  revalidatePath('/dashboard')
+
+  return { ok: true, computed }
 }

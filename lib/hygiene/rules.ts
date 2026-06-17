@@ -11,6 +11,7 @@
 import type { ExitCriterion } from '@/lib/exit-criteria'
 import type {
   HygieneGap,
+  HygieneGapType,
   HygieneSeverity,
 } from '@/lib/hygiene/types'
 
@@ -161,4 +162,30 @@ export function prioritizeGaps(gaps: HygieneGap[]): HygieneGap[] {
         a.i - b.i,
     )
     .map(({ g }) => g)
+}
+
+// --- Résumé (UI J31) --------------------------------------------------------
+
+/**
+ * Sévérité la plus haute d'une liste d'écarts (pour colorer la pastille de la
+ * carte deal / l'accueil). null si aucun écart.
+ */
+export function topSeverity(gaps: HygieneGap[]): HygieneSeverity | null {
+  let best: HygieneSeverity | null = null
+  for (const g of gaps) {
+    if (best === null || SEVERITY_RANK[g.severity] < SEVERITY_RANK[best]) {
+      best = g.severity
+    }
+  }
+  return best
+}
+
+/**
+ * `action_type` stable pour tracer/dédupliquer la correction d'un écart donné
+ * dans `deal_pushed_actions` (J31). On encode le type d'écart → la contrainte
+ * unique (org, group_key, action_type) donne l'idempotence par (deal, écart).
+ * Doit rester aligné avec la liste blanche de la migration 0029.
+ */
+export function hygieneActionType(gapType: HygieneGapType): string {
+  return `hygiene:${gapType}`
 }

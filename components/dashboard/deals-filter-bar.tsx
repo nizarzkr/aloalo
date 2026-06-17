@@ -26,6 +26,11 @@ const RISK_OPTIONS = [
   { value: "risk", label: "À risque seulement" },
 ] as const;
 
+const HYGIENE_OPTIONS = [
+  { value: "all", label: "Hygiène : tous" },
+  { value: "gaps", label: "Avec écarts seulement" },
+] as const;
+
 const SORT_OPTIONS = [
   { value: "risk", label: "Tri : risque d'abord" },
   { value: "recent", label: "Tri : activité récente" },
@@ -33,6 +38,9 @@ const SORT_OPTIONS = [
 
 const RISK_LABEL: Record<string, string> = Object.fromEntries(
   RISK_OPTIONS.map((o) => [o.value, o.label]),
+);
+const HYGIENE_LABEL: Record<string, string> = Object.fromEntries(
+  HYGIENE_OPTIONS.map((o) => [o.value, o.label]),
 );
 const SORT_LABEL: Record<string, string> = Object.fromEntries(
   SORT_OPTIONS.map((o) => [o.value, o.label]),
@@ -45,6 +53,7 @@ export function DealsFilterBar({ owners }: { owners: OwnerOption[] }) {
   const searchParams = useSearchParams();
 
   const currentRisk = searchParams.get("risk") ?? "all";
+  const currentHygiene = searchParams.get("hyg") ?? "all";
   const currentOwner = searchParams.get("owner") ?? "all";
   const currentSort = searchParams.get("sort") ?? "risk";
   const currentQuery = searchParams.get("q") ?? "";
@@ -60,11 +69,12 @@ export function DealsFilterBar({ owners }: { owners: OwnerOption[] }) {
     router.push(qs ? `/dashboard/deals?${qs}` : "/dashboard/deals");
   }
 
-  function update(key: "risk" | "owner" | "sort", value: string) {
+  function update(key: "risk" | "hyg" | "owner" | "sort", value: string) {
     pushParams((params) => {
-      // "all" pour risk/owner et "risk" (défaut) pour sort → on nettoie l'URL.
+      // "all" pour risk/hyg/owner et "risk" (défaut) pour sort → on nettoie l'URL.
       const isDefault =
-        ((key === "risk" || key === "owner") && value === "all") ||
+        ((key === "risk" || key === "hyg" || key === "owner") &&
+          value === "all") ||
         (key === "sort" && value === "risk");
       if (isDefault) params.delete(key);
       else params.set(key, value);
@@ -108,6 +118,21 @@ export function DealsFilterBar({ owners }: { owners: OwnerOption[] }) {
         </SelectTrigger>
         <SelectContent>
           {RISK_OPTIONS.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select value={currentHygiene} onValueChange={(v) => update("hyg", v as string)}>
+        <SelectTrigger className="w-full sm:w-auto sm:min-w-44">
+          <SelectValue>
+            {(v: string | null) => HYGIENE_LABEL[v ?? "all"] ?? "Hygiène : tous"}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {HYGIENE_OPTIONS.map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>
               {opt.label}
             </SelectItem>

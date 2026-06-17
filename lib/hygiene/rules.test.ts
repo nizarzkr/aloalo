@@ -12,10 +12,13 @@ import type { ExitCriterion } from '@/lib/exit-criteria'
 import {
   deriveDeterministicGaps,
   gapsFromAiEval,
+  hygieneActionType,
   prioritizeGaps,
+  topSeverity,
   type DeterministicInput,
   type HygieneEvalResult,
 } from '@/lib/hygiene/rules'
+import type { HygieneGap } from '@/lib/hygiene/types'
 
 const BASE: DeterministicInput = {
   hasDealId: true,
@@ -110,6 +113,36 @@ describe('gapsFromAiEval', () => {
     expect(gaps.map((g) => g.type)).toEqual(['stage_reality_mismatch'])
     expect(gaps[0].severity).toBe('high')
     expect(gaps[0].detail).toContain('démo')
+  })
+})
+
+describe('topSeverity', () => {
+  const gap = (severity: HygieneGap['severity']): HygieneGap => ({
+    type: 'no_next_step',
+    severity,
+    title: '',
+    detail: '',
+  })
+
+  it('renvoie null sans écart', () => {
+    expect(topSeverity([])).toBeNull()
+  })
+
+  it('renvoie la sévérité la plus haute (high prime sur medium/low)', () => {
+    expect(topSeverity([gap('low'), gap('high'), gap('medium')])).toBe('high')
+  })
+
+  it('renvoie medium si pas de high', () => {
+    expect(topSeverity([gap('low'), gap('medium')])).toBe('medium')
+  })
+})
+
+describe('hygieneActionType', () => {
+  it('préfixe le type d’écart par `hygiene:`', () => {
+    expect(hygieneActionType('no_next_step')).toBe('hygiene:no_next_step')
+    expect(hygieneActionType('stage_reality_mismatch')).toBe(
+      'hygiene:stage_reality_mismatch',
+    )
   })
 })
 
