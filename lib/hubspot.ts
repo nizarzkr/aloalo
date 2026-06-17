@@ -779,6 +779,46 @@ export async function createTask(
 }
 
 // ============================================================================
+// Helpers de formatage avant écriture CRM (partagés /api/analyze ⇄ J26).
+// ============================================================================
+// Extraits de /api/analyze (issue #28) pour être réutilisés par l'action
+// « pousser l'alerte coaching dans HubSpot » (J26), sans dupliquer la logique.
+
+// Assainit un texte avant écriture dans HubSpot : retire les caractères de
+// contrôle, normalise les espaces et applique un cap dur de longueur (les champs
+// HubSpot ont des limites ; un texte trop long fait échouer l'écriture).
+export function sanitizeForHubspot(
+  text: string,
+  max: number,
+  keepNewlines = false,
+): string {
+  if (!text) return "";
+  // Plage des caractères de contrôle ASCII (+ DEL). Si on garde les sauts de
+  // ligne, on épargne \n ; sinon on retire toute la plage.
+  const ctrl = keepNewlines
+    ? /[\u0000-\u0009\u000B-\u001F\u007F]/g
+    : /[\u0000-\u001F\u007F]/g;
+  let out = text.replace(ctrl, " ");
+  out = keepNewlines
+    ? out.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n")
+    : out.replace(/\s+/g, " ");
+  out = out.trim();
+  return out.length > max ? out.slice(0, max - 1).trimEnd() + "…" : out;
+}
+
+// Résout une échéance de tâche (AAAA-MM-JJ ou vide) en ms epoch. Repli J+2 si
+// absente/invalide ; plancher à demain (une tâche due aujourd'hui/hier n'a pas
+// de sens en relance).
+export function resolveDueDateMs(dueDate: string | undefined | null): number {
+  const fallback = Date.now() + 2 * 24 * 60 * 60 * 1000;
+  if (!dueDate || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return fallback;
+  const parsed = new Date(`${dueDate}T08:00:00Z`).getTime();
+  if (Number.isNaN(parsed)) return fallback;
+  const minMs = Date.now() + 12 * 60 * 60 * 1000;
+  return Math.max(parsed, minMs);
+}
+
+// ============================================================================
 // testHubspotConnection — vérifie qu'un token est valide (≠ recherche métier).
 // ============================================================================
 // Pourquoi une fonction dédiée : searchContactByPhone renvoie `null` aussi bien

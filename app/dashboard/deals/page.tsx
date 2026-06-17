@@ -21,6 +21,8 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { aggregateOrgDeals, type DealSummary } from "@/lib/deals/aggregate";
 import { severityRank } from "@/lib/metrics/coaching-alert";
+import { getPushedCoachingKeys } from "@/lib/deals/pushed-actions";
+import { PushHubspotActionButton } from "@/components/dashboard/push-hubspot-action-button";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -87,7 +89,11 @@ export default async function DealsListPage({
     );
   }
 
-  const allDeals = await aggregateOrgDeals(profile.organization_id);
+  const [allDeals, pushedKeys] = await Promise.all([
+    aggregateOrgDeals(profile.organization_id),
+    // Clés de deals dont l'alerte a déjà été poussée dans HubSpot (J26).
+    getPushedCoachingKeys(profile.organization_id),
+  ]);
 
   // Options du filtre commercial = propriétaires distincts présents dans les deals.
   const ownerMap = new Map<string, string>();
@@ -176,7 +182,7 @@ export default async function DealsListPage({
             <ul className="grid gap-4 sm:grid-cols-2">
               {deals.map((d) => (
                 <li key={d.group_key}>
-                  <DealCard deal={d} />
+                  <DealCard deal={d} alreadyPushed={pushedKeys.has(d.group_key)} />
                 </li>
               ))}
             </ul>
@@ -187,15 +193,24 @@ export default async function DealsListPage({
   );
 }
 
-function DealCard({ deal }: { deal: DealSummary }) {
+function DealCard({
+  deal,
+  alreadyPushed,
+}: {
+  deal: DealSummary;
+  alreadyPushed: boolean;
+}) {
   const { momentum, alert } = deal;
   const trend = momentum.trend;
 
+  // Pattern « lien étiré » : la carte est un <div> dont un <Link> transparent
+  // (z-10) recouvre toute la surface → carte entièrement cliquable. Le bouton
+  // d'action passe AU-DESSUS (z-20) pour rester cliquable sans imbriquer un
+  // <button> dans un <a> (HTML invalide).
   return (
-    <Link
-      href={`/dashboard/deals/${encodeURIComponent(deal.group_key)}`}
+    <div
       className={cn(
-        "flex h-full flex-col rounded-xl border bg-card p-4 transition-colors hover:bg-muted/40",
+        "relative flex h-full flex-col rounded-xl border bg-card p-4 transition-colors hover:bg-muted/40",
         alert?.severity === "haute"
           ? "border-red-300"
           : alert
@@ -203,6 +218,12 @@ function DealCard({ deal }: { deal: DealSummary }) {
             : "border-border",
       )}
     >
+      <Link
+        href={`/dashboard/deals/${encodeURIComponent(deal.group_key)}`}
+        aria-label={dealTitle(deal)}
+        className="absolute inset-0 z-10 rounded-xl"
+      />
+
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate font-medium text-foreground">
@@ -242,6 +263,13 @@ function DealCard({ deal }: { deal: DealSummary }) {
             </span>
           </div>
           <p className="text-sm text-foreground">{alert.action}</p>
+          {/* z-20 : au-dessus du lien étiré pour rester cliquable. */}
+          <div className="relative z-20 mt-3">
+            <PushHubspotActionButton
+              groupKey={deal.group_key}
+              alreadyPushed={alreadyPushed}
+            />
+          </div>
         </div>
       ) : (
         <p className="mt-auto flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -257,6 +285,6 @@ function DealCard({ deal }: { deal: DealSummary }) {
           )}
         </p>
       )}
-    </Link>
+    </div>
   );
 }

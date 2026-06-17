@@ -29,6 +29,9 @@ import {
 import type { ConversationMetrics } from "@/lib/metrics/conversation";
 import type { BehavioralSignals } from "@/lib/claude";
 import { getContactEmailSignals } from "@/lib/hubspot";
+import { buildAlertForDeal } from "@/lib/metrics/coaching-alert";
+import { hasPushedCoachingAction } from "@/lib/deals/pushed-actions";
+import { PushHubspotActionButton } from "@/components/dashboard/push-hubspot-action-button";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -175,6 +178,23 @@ export default async function DealMomentumPage({
   const momentum = computeDealMomentum(points, crm);
   const trendMeta = TREND_META[momentum.trend];
 
+  // Alerte coaching de CE deal (non null si décrochage) + état « déjà poussé »
+  // dans HubSpot (J26) → conditionne l'affichage du bouton d'action.
+  const alert = buildAlertForDeal(
+    {
+      group_key: decoded,
+      contact_name: contactName,
+      company_name: companyName,
+      deal_name: dealName,
+      owner_name: null,
+      calls_count: calls.length,
+    },
+    momentum,
+  );
+  const alreadyPushed = alert
+    ? await hasPushedCoachingAction(orgFilter, decoded)
+    : false;
+
   const callById = new Map(calls.map((c) => [c.id, c]));
   const dateFmt = (iso: string) =>
     new Date(iso).toLocaleString("fr-FR", {
@@ -281,6 +301,20 @@ export default async function DealMomentumPage({
                   </li>
                 ))}
               </ul>
+            </div>
+          ) : null}
+
+          {/* Action 1:1 actionnable (J26) — uniquement si le deal décroche. */}
+          {alert ? (
+            <div className="rounded-md bg-red-50 p-4">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-700">
+                Action recommandée
+              </p>
+              <p className="mb-3 text-sm text-foreground">{alert.action}</p>
+              <PushHubspotActionButton
+                groupKey={decoded}
+                alreadyPushed={alreadyPushed}
+              />
             </div>
           ) : null}
         </CardContent>

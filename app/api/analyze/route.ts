@@ -26,7 +26,12 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { analyzeCall, estimateCostEur, ANALYSIS_MODEL } from '@/lib/claude'
 import type { CallAnalysis } from '@/lib/claude'
-import { createNote, createTask } from '@/lib/hubspot'
+import {
+  createNote,
+  createTask,
+  sanitizeForHubspot,
+  resolveDueDateMs,
+} from '@/lib/hubspot'
 import type { HubspotTarget } from '@/lib/hubspot'
 import { enrichCallFromHubspot } from '@/lib/hubspot-sync'
 import { decryptSecret } from '@/lib/crypto/org-secrets'
@@ -88,41 +93,8 @@ function capWords(text: string, max: number): string {
   return words.slice(0, max).join(' ') + '…'
 }
 
-// Assainit un texte généré par l'IA avant de l'écrire dans HubSpot (défense en
-// profondeur contre une injection via transcript) : neutralise les caractères de
-// contrôle (qui pourraient casser l'affichage ou masquer du contenu), compacte
-// les espaces, et tronque DUR à `max` caractères. `keepNewlines` préserve les
-// sauts de ligne (\n) pour les notes multi-lignes ; sinon tout l'espace est aplati.
-function sanitizeForHubspot(text: string, max: number, keepNewlines = false): string {
-  if (!text) return ''
-  // Plage des caractères de contrôle ASCII (+ DEL). Si on garde les sauts de
-  // ligne, on épargne \n (\u000A) ; sinon on retire toute la plage.
-  const ctrl = keepNewlines
-    ? /[\u0000-\u0009\u000B-\u001F\u007F]/g
-    : /[\u0000-\u001F\u007F]/g
-  let out = text.replace(ctrl, ' ')
-  out = keepNewlines
-    ? out.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n')
-    : out.replace(/\s+/g, ' ')
-  out = out.trim()
-  return out.length > max ? out.slice(0, max - 1).trimEnd() + '…' : out
-}
-
-/**
- * Convertit une date IA (AAAA-MM-JJ) en timestamp ms pour l'échéance HubSpot.
- * Garde-fous : date illisible OU dans le passé → repli à J+2. L'IA peut se
- * tromper de date ; on ne crée jamais une tâche déjà en retard. On fixe l'heure
- * à 08:00 UTC (échéance « matin », l'heure exacte importe peu pour une tâche).
- */
-function resolveDueDateMs(dueDate: string | undefined | null): number {
-  const fallback = Date.now() + 2 * 24 * 60 * 60 * 1000
-  if (!dueDate || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return fallback
-  const parsed = new Date(`${dueDate}T08:00:00Z`).getTime()
-  if (Number.isNaN(parsed)) return fallback
-  // Plancher : demain (une tâche due aujourd'hui/hier n'a pas de sens en relance).
-  const minMs = Date.now() + 12 * 60 * 60 * 1000
-  return Math.max(parsed, minMs)
-}
+// sanitizeForHubspot + resolveDueDateMs sont désormais partagés dans
+// `@/lib/hubspot` (réutilisés par l'action « pousser l'alerte coaching » du J26).
 
 export async function POST(req: NextRequest) {
   // Rate limit — clé par IP. /api/analyze est appelée en fire-and-forget par les
