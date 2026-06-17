@@ -15,11 +15,16 @@ import { revalidatePath } from "next/cache";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 import { decryptSecret, encryptSecret } from "@/lib/crypto/org-secrets";
+import {
+  generateOrgExitCriteria,
+  saveStageExitCriteria,
+} from "@/lib/exit-criteria";
 import { testHubspotConnection } from "@/lib/hubspot";
 import { syncOrgPipelines } from "@/lib/hubspot-pipelines";
 import { createClient } from "@/lib/supabase/server";
 import {
   AiProfileSchema,
+  ExitCriteriaSchema,
   HubspotSettingsSchema,
   OrgUpdateSchema,
   RingoverApiKeySchema,
@@ -442,5 +447,101 @@ export async function refreshHubspotPipelines(): Promise<PipelineRefreshResult> 
     ok: true,
     message: `Tunnel synchronisé : ${result.pipelineCount} pipeline${result.pipelineCount > 1 ? "s" : ""}, ${result.stageCount} phases.`,
   };
+}
+
+// ============================================================================
+// J28 — Critères de sortie de phase (exit criteria)
+// ============================================================================
+// Owner-only (touche la config de l'org + dépense IA). Calque exact du flow
+// refreshHubspotPipelines : session user → owner check admin → action.
+
+export type ExitCriteriaActionResult =
+  | { ok: true; message: string }
+  | { ok: false; error: string };
+
+// Résout org_id + token déchiffré pour l'owner courant (helper partagé par les
+// deux actions exit-criteria). Renvoie une erreur lisible sinon.
+async function ownerOrgWithToken(): Promise<
+  | { ok: true; orgId: string; token: string | null }
+  | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Session expirée. Reconnectez-vous." };
+
+  const admin = getAdminClient();
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("organization_id, role")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.organization_id) return { ok: false, error: "Profil introuvable." };
+  if (profile.role !== "owner") {
+    return { ok: false, error: "Seul le propriétaire peut gérer les critères de sortie." };
+  }
+
+  const { data: org } = await admin
+    .from("organizations")
+    .select("hubspot_token")
+    .eq("id", profile.organization_id)
+    .single();
+  const token = decryptSecret(org?.hubspot_token ?? null);
+
+  return { ok: true, orgId: profile.organization_id, token };
+}
+
+/**
+ * Génère/régénère les critères de sortie via l'IA. Sans `stageId` : régénère
+ * toutes les phases ouvertes non éditées à la main. Avec `stageId` : régénère
+ * uniquement cette phase (bouton « Régénérer »).
+ */
+export async function generateExitCriteria(
+  stageId?: string,
+): Promise<ExitCriteriaActionResult> {
+  const ctx = await ownerOrgWithToken();
+  if (!ctx.ok) return ctx;
+
+  const result = await generateOrgExitCriteria(ctx.orgId, ctx.token, {
+    stageIds: stageId ? [stageId] : undefined,
+  });
+  revalidatePath("/dashboard/settings/exit-criteria");
+
+  if (!result.ok) return { ok: false, error: result.error };
+  return {
+    ok: true,
+    message: stageId
+      ? "Critères régénérés pour cette phase."
+      : `Critères proposés pour ${result.stagesGenerated} phase${result.stagesGenerated > 1 ? "s" : ""}.`,
+  };
+}
+
+/**
+ * Enregistre l'édition manuelle des critères d'une phase (ajout / suppression /
+ * reformulation). Valide via ExitCriteriaSchema (≤ 8 critères, ≤ 200 car.).
+ */
+export async function saveExitCriteria(
+  stageId: string,
+  criteria: string[],
+): Promise<ExitCriteriaActionResult> {
+  const parsed = ExitCriteriaSchema.safeParse({ stageId, criteria });
+  if (!parsed.success) {
+    return { ok: false, error: firstZodMessage(parsed.error.issues) };
+  }
+
+  const ctx = await ownerOrgWithToken();
+  if (!ctx.ok) return ctx;
+
+  const result = await saveStageExitCriteria(
+    ctx.orgId,
+    parsed.data.stageId,
+    parsed.data.criteria,
+  );
+  revalidatePath("/dashboard/settings/exit-criteria");
+
+  if (!result.ok) return { ok: false, error: result.error ?? "Échec." };
+  return { ok: true, message: "Critères enregistrés." };
 }
 

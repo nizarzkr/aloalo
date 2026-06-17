@@ -13,6 +13,7 @@ import { usePathname } from "next/navigation";
 import {
   Cable,
   CreditCard,
+  ListChecks,
   ShieldAlert,
   Sparkles,
   UserRound,
@@ -28,6 +29,11 @@ const ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
     href: "/dashboard/settings/integrations",
     label: "Intégrations",
     icon: Cable,
+  },
+  {
+    href: "/dashboard/settings/exit-criteria",
+    label: "Critères de sortie",
+    icon: ListChecks,
   },
   { href: "/dashboard/settings/ai-profile", label: "Profil IA", icon: Sparkles },
   { href: "/dashboard/settings/advanced", label: "Avancé", icon: ShieldAlert },

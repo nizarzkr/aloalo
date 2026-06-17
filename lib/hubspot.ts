@@ -864,6 +864,76 @@ export async function getDealPipelines(
 }
 
 // ============================================================================
+// 7. getRecentWonDeals — échantillon de deals GAGNÉS du portail (J28).
+// ============================================================================
+// Sert d'enrichissement « optionnel » à la génération des exit-criteria : si le
+// client a déjà des deals gagnés, on les passe en contexte à l'IA pour qu'elle
+// calibre les critères sur le vrai process de la boîte (montant typique, pipeline,
+// vélocité). HYBRIDE AVEC FILET : l'appelant ne s'en sert que s'il y en a assez,
+// sinon la génération retombe sur libellés + ai_profile (jour 1, portail vide).
+//
+// On filtre `hs_is_closed_won = true` (propriété standard fiable sur tous les
+// pipelines, custom compris) et on trie par date de closing décroissante. Léger :
+// aucune découverte de schéma de propriétés (hors scope J28). Robuste : [] en cas
+// d'échec, ne logge jamais le token.
+export type HubspotWonDeal = {
+  id: string;
+  dealname: string | null;
+  amount: string | null;
+  dealstage: string | null;
+  pipeline: string | null;
+  closedate: string | null;
+};
+
+export async function getRecentWonDeals(
+  token: string,
+  limit = 15,
+): Promise<HubspotWonDeal[]> {
+  if (!token) return [];
+
+  const res = await hubspotFetch("/crm/v3/objects/deals/search", token, {
+    method: "POST",
+    body: {
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: "hs_is_closed_won", operator: "EQ", value: "true" },
+          ],
+        },
+      ],
+      sorts: [{ propertyName: "closedate", direction: "DESCENDING" }],
+      properties: ["dealname", "amount", "dealstage", "pipeline", "closedate"],
+      limit: Math.min(Math.max(limit, 1), 100),
+    },
+  });
+  if (!res || !res.ok) {
+    if (res) {
+      console.error("[hubspot] getRecentWonDeals failed", { status: res.status });
+    }
+    return [];
+  }
+
+  try {
+    const data = (await res.json()) as {
+      results?: Array<{ id: string; properties?: Record<string, string | null> }>;
+    };
+    return (data.results ?? []).map((d) => {
+      const p = d.properties ?? {};
+      return {
+        id: d.id,
+        dealname: p.dealname ?? null,
+        amount: p.amount ?? null,
+        dealstage: p.dealstage ?? null,
+        pipeline: p.pipeline ?? null,
+        closedate: p.closedate ?? null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================================
 // Helpers de formatage avant écriture CRM (partagés /api/analyze ⇄ J26).
 // ============================================================================
 // Extraits de /api/analyze (issue #28) pour être réutilisés par l'action

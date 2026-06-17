@@ -610,3 +610,183 @@ export function estimateCostEur(inputTokens: number, outputTokens: number): numb
   const costEur = costUsd * 0.92
   return Math.round(costEur * 1_000_000) / 1_000_000  // 6 décimales (= précision colonne cost_eur en DB)
 }
+
+// ===========================================================================
+// J28 — Génération des critères de sortie de phase (« exit criteria »)
+// ===========================================================================
+// Pour chaque PHASE OUVERTE du tunnel HubSpot (J27), Claude propose 3-5 critères
+// de sortie courts et vérifiables (« Budget confirmé », « Décideur identifié »).
+// Même fiabilité que l'analyse : sortie forcée via tool use (`submit_exit_criteria`)
+// → JSON garanti. Pas une boîte noire : ces critères sont affichés et éditables
+// côté client (cf. principe J21/J22bis), puis vérifiés sur la transcription en J30.
+
+// Une phase ouverte, telle que passée au prompt (sans les métadonnées de closing).
+export type ExitCriteriaStageInput = {
+  pipelineLabel: string
+  stageId: string
+  stageLabel: string
+  order: number // rang de la phase dans son pipeline (1 = première)
+}
+
+// Un deal gagné résumé pour le contexte (enrichissement optionnel, J28).
+export type ExitCriteriaWonDealInput = {
+  amount: string | null
+  closedate: string | null
+}
+
+// Sortie : pour chaque stageId, la liste des libellés de critères (sans id ;
+// l'orchestrateur attribue les id stables).
+export type ProposeExitCriteriaResult = {
+  criteriaByStage: Record<string, string[]>
+  usage: { input_tokens: number; output_tokens: number }
+}
+
+const EXIT_CRITERIA_TOOL: Anthropic.Tool = {
+  name: 'submit_exit_criteria',
+  description:
+    "Soumet les critères de sortie proposés pour chaque phase du tunnel de vente. Tu DOIS appeler ce tool une seule fois.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      stages: {
+        type: 'array',
+        description:
+          "Un objet par phase qu'on t'a demandé d'évaluer (mêmes stage_id, sans en inventer ni en oublier).",
+        items: {
+          type: 'object',
+          properties: {
+            stage_id: {
+              type: 'string',
+              description: "L'identifiant EXACT de la phase, recopié depuis l'entrée.",
+            },
+            criteria: {
+              type: 'array',
+              minItems: 2,
+              maxItems: 5,
+              description:
+                "3 à 5 critères de sortie courts, factuels et vérifiables sur un appel commercial, qui justifient le passage à la phase suivante. Formulés en français, sans ponctuation finale (ex: « Budget confirmé », « Décideur identifié », « Cas d'usage validé »).",
+              items: { type: 'string' },
+            },
+          },
+          required: ['stage_id', 'criteria'],
+        },
+      },
+    },
+    required: ['stages'],
+  },
+}
+
+function buildExitCriteriaMessage(
+  stages: ExitCriteriaStageInput[],
+  aiProfile: AiProfileData | null | undefined,
+  wonDeals: ExitCriteriaWonDealInput[] | null | undefined,
+): string {
+  const contextBlock = buildContextBlock(aiProfile)
+  const prefix = contextBlock ? `${contextBlock}\n\n` : ''
+
+  // On groupe les phases par pipeline pour donner à l'IA le SENS de l'ordre
+  // (un critère de sortie dépend de la phase qui suit).
+  const byPipeline = new Map<string, ExitCriteriaStageInput[]>()
+  for (const s of stages) {
+    const list = byPipeline.get(s.pipelineLabel) ?? []
+    list.push(s)
+    byPipeline.set(s.pipelineLabel, list)
+  }
+  const stagesBlock = Array.from(byPipeline.entries())
+    .map(([pipeline, list]) => {
+      const lines = [...list]
+        .sort((a, b) => a.order - b.order)
+        .map((s) => `  - [${s.stageId}] ${s.stageLabel}`)
+        .join('\n')
+      return `Pipeline « ${pipeline} » (phases dans l'ordre) :\n${lines}`
+    })
+    .join('\n\n')
+
+  // Enrichissement optionnel : un aperçu des deals gagnés pour calibrer (montant
+  // typique, vélocité). Volontairement compact et anonyme (pas de noms).
+  let wonBlock = ''
+  if (wonDeals && wonDeals.length > 0) {
+    const amounts = wonDeals
+      .map((d) => Number(d.amount))
+      .filter((n) => Number.isFinite(n) && n > 0)
+    const avg =
+      amounts.length > 0
+        ? Math.round(amounts.reduce((a, b) => a + b, 0) / amounts.length)
+        : null
+    wonBlock = `\n\nContexte « deals déjà gagnés » (${wonDeals.length} deals)${
+      avg != null ? ` — montant moyen ≈ ${avg} €` : ''
+    }. Sers-t'en pour rendre les critères réalistes par rapport à la maturité de cette boîte, sans inventer de chiffres.`
+  }
+
+  return `${prefix}Tu aides un responsable commercial (RevOps) à définir les CRITÈRES DE SORTIE de chaque phase de son tunnel de vente.
+
+Un critère de sortie répond à : « qu'est-ce qui doit être VRAI, et constatable dans un appel commercial, pour qu'un deal mérite de quitter cette phase vers la suivante ? ». Reste concret et propre au métier décrit dans le contexte client (s'il est fourni).
+
+Phases à traiter :
+${stagesBlock}${wonBlock}
+
+Pour CHAQUE phase listée, propose 3 à 5 critères courts et vérifiables, puis appelle le tool \`submit_exit_criteria\` en reprenant exactement les stage_id ci-dessus.`
+}
+
+/**
+ * Propose des critères de sortie par phase ouverte. `aiProfile` et `wonDeals`
+ * sont optionnels (le filet hybride : la génération marche sans, mais s'affine
+ * avec). Renvoie les libellés par stageId + l'usage tokens (pour usage_logs).
+ */
+export async function proposeExitCriteria(
+  stages: ExitCriteriaStageInput[],
+  aiProfile?: AiProfileData | null,
+  wonDeals?: ExitCriteriaWonDealInput[] | null,
+): Promise<ProposeExitCriteriaResult> {
+  if (stages.length === 0) {
+    return { criteriaByStage: {}, usage: { input_tokens: 0, output_tokens: 0 } }
+  }
+
+  const client = getClient()
+  const message = buildExitCriteriaMessage(stages, aiProfile, wonDeals)
+
+  const response = await client.messages.create({
+    model: ANALYSIS_MODEL,
+    max_tokens: 2048,
+    temperature: 0,
+    tools: [EXIT_CRITERIA_TOOL],
+    tool_choice: { type: 'tool', name: 'submit_exit_criteria' },
+    messages: [{ role: 'user', content: message }],
+  })
+
+  const toolUseBlock = response.content.find(
+    (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
+  )
+  if (!toolUseBlock || toolUseBlock.name !== 'submit_exit_criteria') {
+    throw new Error(
+      `Claude n'a pas appelé submit_exit_criteria (stop_reason=${response.stop_reason})`,
+    )
+  }
+
+  const input = toolUseBlock.input as {
+    stages?: Array<{ stage_id?: string; criteria?: string[] }>
+  }
+
+  // On ne garde que les phases demandées (l'IA pourrait halluciner un stage_id)
+  // et on nettoie/dédoublonne les libellés.
+  const allowed = new Set(stages.map((s) => s.stageId))
+  const criteriaByStage: Record<string, string[]> = {}
+  for (const entry of input.stages ?? []) {
+    const id = entry.stage_id
+    if (!id || !allowed.has(id)) continue
+    const labels = (entry.criteria ?? [])
+      .map((c) => (typeof c === 'string' ? c.trim() : ''))
+      .filter((c) => c.length > 0)
+      .slice(0, 5)
+    const deduped = Array.from(new Set(labels))
+    if (deduped.length > 0) criteriaByStage[id] = deduped
+  }
+
+  return {
+    criteriaByStage,
+    usage: {
+      input_tokens: response.usage.input_tokens,
+      output_tokens: response.usage.output_tokens,
+    },
+  }
+}

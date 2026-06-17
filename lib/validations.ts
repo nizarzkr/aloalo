@@ -120,6 +120,29 @@ export const AiProfileSchema = z.object({
 export type AiProfileData = z.infer<typeof AiProfileSchema>
 
 // ---------------------------------------------------------------------------
+// ExitCriteriaSchema — Server Action saveExitCriteria (J28)
+// ---------------------------------------------------------------------------
+// Édition manuelle des critères de sortie d'UNE phase. Le client envoie un
+// stageId + une liste de libellés de critères.
+//  - stageId : identifiant HubSpot de la phase (non vide).
+//  - criteria : 0 à 8 libellés ; chacun trim, 1→200 car. Les libellés vides sont
+//    retirés (l'utilisateur peut laisser un champ vide en supprimant un critère).
+//    0 critère est valide (l'owner vide volontairement la phase).
+export const ExitCriteriaSchema = z.object({
+  stageId: z.string().trim().min(1, 'phase manquante').max(100, 'phase invalide'),
+  criteria: z
+    .array(z.string())
+    .max(8, 'maximum 8 critères par phase')
+    .transform((arr) =>
+      arr
+        .map((c) => c.trim())
+        .filter((c) => c.length > 0 && c.length <= 200),
+    ),
+})
+
+export type ExitCriteriaInput = z.infer<typeof ExitCriteriaSchema>
+
+// ---------------------------------------------------------------------------
 // HubspotSettingsSchema — Server Action updateHubspotSettings (J15)
 // ---------------------------------------------------------------------------
 // Deux champs, tous deux OPTIONNELS :
