@@ -16,8 +16,11 @@ import {
   type TooltipContentProps,
 } from "recharts";
 
+import { CalendarClock, Sparkles, Target, History } from "lucide-react";
+
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -26,7 +29,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { DimensionsDots } from "@/components/dashboard/dimensions-dots";
+import { DIMENSION_META } from "@/components/dashboard/dimensions-eval";
 import { summarizeDimensions } from "@/lib/metrics/dimensions-summary";
+import type { DimensionKey } from "@/lib/claude";
 import { cn } from "@/lib/utils";
 
 type Profile = {
@@ -50,12 +55,21 @@ type Call = {
   dimensions: unknown; // jsonb des 5 dimensions (J21) — null si appel pré-J21
 };
 
+type Citation = { callId: string; contact: string; date: string; quote: string };
+type OneOnOneRef = { id: string; date: string; focusAxis: string | null };
+
 type Props = {
   profile: Profile;
-  calls: Call[]; // chronologique ascendant, max 30
+  calls: Call[]; // chronologique ascendant, max 50
   analyzedCount: number;
   avgValidated: number | null; // moyenne de dimensions validées (0-5), J25
   totalDurationSeconds: number;
+  // Coaching (J36) — calculés côté serveur, déterministes.
+  strengthKey: DimensionKey | null; // point fort récurrent
+  progressionKey: DimensionKey | null; // axe de progression récurrent
+  citations: Citation[]; // exemples concrets pour l'axe de progression
+  oneOnOnes: OneOnOneRef[]; // historique des 1:1 (owner/manager only)
+  canCoach: boolean; // viewer owner/manager → CTA 1:1 + historique
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -148,9 +162,15 @@ export function UserProfile({
   analyzedCount,
   avgValidated,
   totalDurationSeconds,
+  strengthKey,
+  progressionKey,
+  citations,
+  oneOnOnes,
+  canCoach,
 }: Props) {
   const displayName = profile.full_name?.trim() || profile.email;
   const initials = getInitials(profile);
+  const firstName = displayName.trim().split(/\s+/)[0] || displayName;
 
   // Courbe (J25) : nb de dimensions validées (0-5) par appel, dans le temps.
   // On ne garde que les appels qui ont des dimensions exploitables.
@@ -207,6 +227,15 @@ export function UserProfile({
             <span>Membre depuis le {formatDate(profile.created_at)}</span>
           </div>
         </div>
+        {canCoach ? (
+          <Link
+            href={`/dashboard/one-on-ones?rep=${profile.id}`}
+            className={cn(buttonVariants({ size: "sm" }), "shrink-0")}
+          >
+            <CalendarClock className="size-4" />
+            Préparer un 1:1
+          </Link>
+        ) : null}
       </header>
 
       {/* KPI */}
@@ -222,6 +251,63 @@ export function UserProfile({
           </Card>
         ))}
       </section>
+
+      {/* Coaching : point fort + axe de progression (ton bienveillant) */}
+      {strengthKey || progressionKey ? (
+        <section className="mt-8 grid gap-4 sm:grid-cols-2">
+          {strengthKey ? (
+            <Card className="border-mint/60 p-2">
+              <CardHeader>
+                <CardDescription className="flex items-center gap-1.5">
+                  <Sparkles className="size-3.5" aria-hidden />
+                  Point fort
+                </CardDescription>
+                <CardTitle className="text-lg">
+                  {DIMENSION_META[strengthKey].label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                {DIMENSION_META[strengthKey].hint}. C&apos;est une vraie force de{" "}
+                {firstName} — à valoriser.
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {progressionKey ? (
+            <Card className="p-2">
+              <CardHeader>
+                <CardDescription className="flex items-center gap-1.5">
+                  <Target className="size-3.5" aria-hidden />
+                  Axe de progression
+                </CardDescription>
+                <CardTitle className="text-lg">
+                  {DIMENSION_META[progressionKey].label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>{DIMENSION_META[progressionKey].hint}. À renforcer ensemble.</p>
+                {citations.length > 0 ? (
+                  <ul className="space-y-2 border-t border-border pt-3">
+                    {citations.map((c) => (
+                      <li key={c.callId} className="text-xs">
+                        <Link
+                          href={`/dashboard/calls/${c.callId}`}
+                          className="italic text-foreground underline-offset-4 hover:underline"
+                        >
+                          « {c.quote} »
+                        </Link>
+                        <span className="ml-1 text-muted-foreground">
+                          — {c.contact}, {formatShortDate(c.date)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+        </section>
+      ) : null}
 
       {/* Progression */}
       <section className="mt-8">
@@ -279,6 +365,42 @@ export function UserProfile({
           </CardContent>
         </Card>
       </section>
+
+      {/* Historique des 1:1 (owner/manager) — la continuité du coaching */}
+      {canCoach && oneOnOnes.length > 0 ? (
+        <section className="mt-8">
+          <Card className="p-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="size-4" aria-hidden />
+                Historique des 1:1
+              </CardTitle>
+              <CardDescription>
+                La progression de {firstName}, entretien après entretien.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              <ul className="divide-y divide-border">
+                {oneOnOnes.map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex items-center justify-between gap-3 px-6 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {s.focusAxis ?? "Pas assez de données sur la période"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(s.date)}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       {/* Derniers appels */}
       <section className="mt-8">
