@@ -15,10 +15,15 @@ type SimResult = {
   webhook_response: Record<string, unknown>
 }
 
+type SimProvider = 'ringover' | 'aircall'
+
 export function DevTestClient() {
   const router = useRouter()
   const [loading, setLoading] = useState<number | null>(null)
   const [results, setResults] = useState<SimResult[]>([])
+  // Source simulée : on rejoue le webhook Ringover OU Aircall (J44) dans son
+  // format réel, pour tester l'adaptateur correspondant.
+  const [provider, setProvider] = useState<SimProvider>('ringover')
 
   async function simulateCall(index: number) {
     setLoading(index)
@@ -26,7 +31,7 @@ export function DevTestClient() {
       const res = await fetch('/api/dev/simulate-call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcriptIndex: index }),
+        body: JSON.stringify({ transcriptIndex: index, provider }),
       })
       const data = await res.json()
       // Sur succès, on file direct sur la liste des appels — l'appel apparaît
@@ -56,9 +61,27 @@ export function DevTestClient() {
           DEV ONLY
         </div>
         <h1 className="text-2xl font-bold mb-1">Simulateur d&apos;appels</h1>
-        <p className="text-gray-400 mb-8 text-sm">
-          Déclenche un faux appel Ringover → le webhook reçoit le payload → un enregistrement est créé en base.
+        <p className="text-gray-400 mb-6 text-sm">
+          Déclenche un faux appel → le webhook de la source reçoit le payload → un enregistrement est créé en base.
         </p>
+
+        {/* Sélecteur de source : rejoue le webhook Ringover ou Aircall */}
+        <div className="mb-8 flex gap-2">
+          {(['ringover', 'aircall'] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => setProvider(p)}
+              disabled={loading !== null}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors disabled:opacity-50 ${
+                provider === p
+                  ? 'border-blue-500 bg-blue-600 text-white'
+                  : 'border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800'
+              }`}
+            >
+              {p === 'ringover' ? 'Ringover' : 'Aircall'}
+            </button>
+          ))}
+        </div>
 
         {/* Boutons de simulation */}
         <div className="space-y-3 mb-10">

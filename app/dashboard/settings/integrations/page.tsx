@@ -8,6 +8,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 import { hasSecret } from "@/lib/crypto/org-secrets";
 import { getOrgPipelines } from "@/lib/hubspot-pipelines";
+import { AircallTokenForm } from "@/components/dashboard/aircall-token-form";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { GoogleConnection } from "@/components/dashboard/google-connection";
 import { HubspotConnection } from "@/components/dashboard/hubspot-connection";
@@ -61,7 +62,7 @@ export default async function IntegrationsSettingsPage({
     ? await admin
         .from("organizations")
         .select(
-          "ringover_api_key, hubspot_token, hubspot_refresh_token, hubspot_portal_id, google_refresh_token, google_email",
+          "ringover_api_key, hubspot_token, hubspot_refresh_token, hubspot_portal_id, google_refresh_token, google_email, aircall_webhook_token_hash",
         )
         .eq("id", profile.organization_id)
         .maybeSingle()
@@ -71,6 +72,8 @@ export default async function IntegrationsSettingsPage({
   // On ne lit que la PRÉSENCE des secrets (chiffrés OU legacy clair), jamais
   // leur valeur — et on ne déchiffre rien ici.
   const hasRingoverKey = hasSecret(org?.ringover_api_key);
+  // Aircall (J44) : le token est stocké hashé (pas de enc:v1:) → présence simple.
+  const hasAircallToken = Boolean(org?.aircall_webhook_token_hash);
   // OAuth (J38) = présence d'un refresh token ; legacy = ancien Private App
   // token collé à la main. « Connecté » dès que l'un des deux existe.
   const hasHubspotOAuth = hasSecret(org?.hubspot_refresh_token);
@@ -100,6 +103,7 @@ export default async function IntegrationsSettingsPage({
   // URL du webhook Ringover — basée sur NEXT_PUBLIC_APP_URL (prod/preview).
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") ?? "";
   const webhookUrl = `${appUrl}/api/webhooks/ringover`;
+  const aircallWebhookUrl = `${appUrl}/api/webhooks/aircall`;
 
   return (
     <div>
@@ -184,6 +188,63 @@ export default async function IntegrationsSettingsPage({
             </div>
           </CardContent>
         </Card>
+
+        {/* --- Aircall (téléphonie, owner uniquement) ----------------- */}
+        {isOwner ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Aircall</CardTitle>
+                  <CardDescription>
+                    Synchronisez automatiquement vos appels Aircall avec Aloalo.
+                  </CardDescription>
+                </div>
+                {hasAircallToken ? (
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  >
+                    Connectée
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  >
+                    À configurer
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* URL du webhook à coller dans Aircall */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium">URL du webhook</h3>
+                <p className="text-xs text-muted-foreground">
+                  Dans Aircall &rsaquo; Integrations &rsaquo; Webhooks, créez un
+                  webhook sur l&apos;événement « Call ended » pointant vers cette
+                  URL, puis copiez le token généré ci-dessous.
+                </p>
+                <div className="flex items-stretch gap-2">
+                  <code className="flex-1 truncate rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs text-foreground">
+                    {aircallWebhookUrl ||
+                      "URL non configurée (NEXT_PUBLIC_APP_URL manquant)"}
+                  </code>
+                  {aircallWebhookUrl ? (
+                    <CopyButton value={aircallWebhookUrl} label="Copier l'URL" />
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Token du webhook */}
+              <div className="space-y-3 border-t border-border pt-6">
+                <h3 className="text-sm font-medium">Token du webhook</h3>
+                <AircallTokenForm canEdit={isOwner} hasToken={hasAircallToken} />
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {/* --- HubSpot (owner uniquement — touche un secret) ---------- */}
         {isOwner ? (

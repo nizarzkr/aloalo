@@ -11,6 +11,7 @@
 //      policy UPDATE sur organizations juste pour ce flow)
 // ============================================================================
 
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
@@ -530,6 +531,57 @@ export async function disconnectGoogle(): Promise<UpdateOrgResult> {
   revalidatePath("/dashboard/settings/integrations");
   revalidatePath("/onboarding");
   return { ok: true, message: "Google Meet déconnecté." };
+}
+
+// ============================================================================
+// updateAircallWebhookToken — rattache un webhook Aircall à l'org (J44)
+// ============================================================================
+// L'owner colle le « token » de son webhook Aircall ; on en stocke le SHA-256
+// (déterministe, indexable) dans aircall_webhook_token_hash. /api/webhooks/aircall
+// dérive ensuite l'org en hashant le token reçu et en le comparant. Champ vide
+// = no-op (on ne casse pas une intégration existante par accident).
+export async function updateAircallWebhookToken(
+  _prev: UpdateOrgResult | null,
+  formData: FormData,
+): Promise<UpdateOrgResult> {
+  const rawToken = String(formData.get("aircall_webhook_token") ?? "").trim();
+  if (rawToken.length === 0) {
+    return { ok: true, message: "Aucune modification (champ vide)." };
+  }
+  if (rawToken.length > 300) {
+    return { ok: false, error: "Token trop long." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Session expirée. Reconnectez-vous." };
+
+  const admin = getAdminClient();
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("organization_id, role")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.organization_id) return { ok: false, error: "Profil introuvable." };
+  if (profile.role !== "owner") {
+    return { ok: false, error: "Seul le propriétaire peut configurer Aircall." };
+  }
+
+  const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  const { error } = await admin
+    .from("organizations")
+    .update({ aircall_webhook_token_hash: tokenHash })
+    .eq("id", profile.organization_id);
+
+  if (error) {
+    return { ok: false, error: "Impossible d'enregistrer le token Aircall." };
+  }
+
+  revalidatePath("/dashboard/settings/integrations");
+  return { ok: true, message: "Token Aircall enregistré." };
 }
 
 // ============================================================================

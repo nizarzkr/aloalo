@@ -40,6 +40,9 @@ export async function POST(req: NextRequest) {
     : Math.floor(Math.random() * MOCK_TRANSCRIPTS.length)
 
   const transcript = MOCK_TRANSCRIPTS[transcriptIndex]
+  // Provider simulé : 'ringover' (défaut) ou 'aircall' (J44). On rejoue le
+  // webhook de chaque source dans son format réel pour tester son adaptateur.
+  const provider = body.provider === 'aircall' ? 'aircall' : 'ringover'
 
   // L'appel simulé est rattaché à l'org de l'utilisateur connecté (cookie de session).
   // Avant : on prenait la première org en DB → multi-comptes en dev = collision possible.
@@ -69,50 +72,86 @@ export async function POST(req: NextRequest) {
 
   const organizationId = profile.organization_id
 
-  // Forger le payload Ringover (format réel de leur API)
-  const fakePayload = {
-    event: 'call.ended',
-    organization_id: organizationId,
-    call: {
-      id: `sim_${Date.now()}`,
-      from_number: transcript.caller_number,
-      to_number: transcript.callee_number,
-      duration: transcript.duration_seconds,
-      recording_url: null, // Pas d'audio en simulation
-      started_at: new Date(Date.now() - transcript.duration_seconds * 1000).toISOString(),
-      // Appel simulé attribué au commercial connecté qui déclenche la simulation.
-      user_id: user.id,
-      // On glisse le transcript dans les metadata pour le récupérer au J4
-      _sim_transcript: {
-        text: transcript.text,
-        segments: transcript.segments,
-        mock_id: transcript.id,
-        title: transcript.title,
-        // Identité CRM pré-câblée (démo / scénarios multi-contacts) — persistée
-        // telle quelle sur l'appel par le webhook (cf. SimTranscriptSchema passthrough).
-        contact_name: transcript.contact_name ?? null,
-        company_name: transcript.company_name ?? null,
-        deal_name: transcript.deal_name ?? null,
-        deal_id: transcript.deal_id ?? null,
-      }
-    }
+  // Transcript de simulation, identique quel que soit le provider — c'est ce que
+  // le webhook détecte (_sim_transcript) pour basculer en mode simulation.
+  const simTranscript = {
+    text: transcript.text,
+    segments: transcript.segments,
+    mock_id: transcript.id,
+    title: transcript.title,
+    // Identité CRM pré-câblée (démo / scénarios multi-contacts) — persistée
+    // telle quelle sur l'appel par le webhook (cf. SimTranscriptSchema passthrough).
+    contact_name: transcript.contact_name ?? null,
+    company_name: transcript.company_name ?? null,
+    deal_name: transcript.deal_name ?? null,
+    deal_id: transcript.deal_id ?? null,
+  }
+  const callId = `sim_${Date.now()}`
+
+  // Forger le payload dans le format RÉEL de la source choisie. Le webhook
+  // correspondant reçoit donc exactement la forme qu'enverrait le vrai provider.
+  let webhookPath: string
+  let signatureHeader: string
+  let payloadString: string
+
+  if (provider === 'aircall') {
+    // Aircall : enveloppe { resource, event, timestamp, token, data }, timestamps
+    // en SECONDES UNIX. organization_id top-level = sim uniquement.
+    const now = Math.floor(Date.now() / 1000)
+    payloadString = JSON.stringify({
+      resource: 'call',
+      event: 'call.ended',
+      timestamp: now,
+      token: 'sim',
+      organization_id: organizationId,
+      data: {
+        id: callId,
+        direction: 'inbound',
+        status: 'done',
+        started_at: now - transcript.duration_seconds,
+        ended_at: now,
+        duration: transcript.duration_seconds,
+        raw_digits: transcript.callee_number,
+        recording: null, // Pas d'audio en simulation
+        user_id: user.id,
+        _sim_transcript: simTranscript,
+      },
+    })
+    webhookPath = '/api/webhooks/aircall'
+    signatureHeader = 'x-aircall-signature'
+  } else {
+    // Ringover : { event, organization_id, call }, started_at en ISO.
+    payloadString = JSON.stringify({
+      event: 'call.ended',
+      organization_id: organizationId,
+      call: {
+        id: callId,
+        from_number: transcript.caller_number,
+        to_number: transcript.callee_number,
+        duration: transcript.duration_seconds,
+        recording_url: null,
+        started_at: new Date(Date.now() - transcript.duration_seconds * 1000).toISOString(),
+        user_id: user.id,
+        _sim_transcript: simTranscript,
+      },
+    })
+    webhookPath = '/api/webhooks/ringover'
+    signatureHeader = 'x-ringover-signature'
   }
 
-  const payloadString = JSON.stringify(fakePayload)
-
-  // Calculer la signature HMAC exactement comme le ferait Ringover
+  // Signature HMAC-SHA256 avec le secret du simulateur (RINGOVER_WEBHOOK_SECRET).
+  // Les deux webhooks vérifient cette même signature sur le chemin de simulation.
   const signature = crypto
     .createHmac('sha256', secret)
     .update(payloadString)
     .digest('hex')
 
-  // Envoyer la requête à notre propre webhook
-  const webhookUrl = new URL('/api/webhooks/ringover', req.url).toString()
+  const webhookUrl = new URL(webhookPath, req.url).toString()
   const response = await fetch(webhookUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-ringover-signature': signature,
+      [signatureHeader]: signature,
     },
     body: payloadString,
   })
@@ -121,6 +160,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     success: response.ok,
+    provider,
     transcript_used: transcript.title,
     webhook_status: response.status,
     webhook_response: result,

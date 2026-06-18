@@ -234,6 +234,46 @@ export const RingoverWebhookSchema = z
 export type RingoverWebhookInput = z.infer<typeof RingoverWebhookSchema>
 
 // ---------------------------------------------------------------------------
+// AircallWebhookSchema — POST /api/webhooks/aircall (J44)
+// ---------------------------------------------------------------------------
+// Enveloppe Aircall : { resource, event, timestamp(unix), token, data }.
+// `token` = secret unique du webhook → identifie l'org (lookup par hash SHA-256).
+// L'objet `data` (call) porte des timestamps en SECONDES UNIX (≠ ISO Ringover).
+// `recording` = URL MP3 directe (valide 1h) → audioUrl, pas d'appel API séparé.
+// On reste tolérant (.passthrough()) au cas où Aircall ajoute des champs.
+// `organization_id` top-level + `_sim_transcript` : présents UNIQUEMENT en
+// simulation (injectés par /api/dev/simulate-call), absents d'un vrai Aircall.
+const AircallCallSchema = z
+  .object({
+    // Aircall envoie un Int64 ; en simulation on envoie une string `sim_…`.
+    id: z.union([z.number(), z.string()]).transform((v) => String(v)),
+    direction: z.string().optional(),
+    status: z.string().optional(),
+    started_at: z.number().optional(),
+    ended_at: z.number().optional(),
+    duration: z.number().nonnegative().optional(),
+    raw_digits: z.string().optional(),
+    recording: z.string().url().nullable().optional(),
+    user_id: z.string().uuid('user_id doit être un uuid').nullable().optional(),
+    _sim_transcript: SimTranscriptSchema.nullable().optional(),
+  })
+  .passthrough()
+
+export const AircallWebhookSchema = z
+  .object({
+    resource: z.string().optional(),
+    event: z.string().min(1, 'event requis'),
+    timestamp: z.number().optional(),
+    token: z.string().optional(),
+    // Simulation uniquement : l'org de l'utilisateur connecté qui déclenche le sim.
+    organization_id: z.string().uuid('organization_id doit être un uuid').optional(),
+    data: AircallCallSchema,
+  })
+  .passthrough()
+
+export type AircallWebhookInput = z.infer<typeof AircallWebhookSchema>
+
+// ---------------------------------------------------------------------------
 // SignupSchema / LoginSchema — Server Actions signup & login
 // ---------------------------------------------------------------------------
 // Validation côté serveur des formulaires d'auth. Le client a un minLength=8
