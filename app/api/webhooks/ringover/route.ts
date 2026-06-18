@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import { NextRequest, NextResponse, after } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
-import * as Sentry from '@sentry/nextjs'
 import { getRingoverCallRecording } from '@/lib/ringover'
 import { decryptSecret } from '@/lib/crypto/org-secrets'
 import {
@@ -11,6 +10,18 @@ import {
   rateLimitedResponse,
 } from '@/lib/rate-limit'
 import { RingoverWebhookSchema } from '@/lib/validations'
+import { ingestRecording } from '@/lib/ingestion/ingest'
+import type { NormalizedRecording, SimTranscript } from '@/lib/ingestion/types'
+
+// ============================================================================
+// ADAPTATEUR Ringover → couche d'ingestion commune (J41).
+// ----------------------------------------------------------------------------
+// Ce handler ne contient QUE le spécifique Ringover : vérif de signature HMAC,
+// parsing/validation du payload, dérivation sûre de l'org, résolution de l'URL
+// audio via l'API Ringover. Il traduit ensuite l'événement vers un
+// `NormalizedRecording` et délègue tout le commun (insertion idempotente +
+// déclenchement de la transcription) à `ingestRecording` (lib/ingestion/ingest.ts).
+// ============================================================================
 
 function verifySignature(body: string, signature: string, secret: string): boolean {
   // Fail closed : pas de secret configuré → on refuse tout (jamais d'open door).
@@ -80,26 +91,21 @@ export async function POST(req: NextRequest) {
   // 5. Extraire les infos de l'appel (déjà validées par Zod)
   const call = payload.call
 
-  // 6. Détecter le mode simulation
-  //    Le simulate-call injecte _sim_transcript dans l'objet call du payload
+  // 6. Détecter le mode simulation.
+  //    Le simulate-call injecte _sim_transcript dans l'objet call du payload.
   const simTranscriptRaw = call._sim_transcript ?? null
 
-  const simTranscript = simTranscriptRaw
+  const simTranscript: SimTranscript | null = simTranscriptRaw
     ? {
         text: simTranscriptRaw.text,
-        segments: simTranscriptRaw.segments as Array<{
-          speaker: string
-          text: string
-          start: number
-          end: number
-        }>,
+        segments: simTranscriptRaw.segments as SimTranscript['segments'],
         duration_seconds: call.duration as number,
         title: simTranscriptRaw.title,
       }
     : null
 
-  // 7. Client admin (bypass RLS) — nécessaire dès maintenant pour dériver l'org
-  //    d'un appel réel (pas de JWT user sur un webhook), puis pour l'insert.
+  // 7. Client admin (bypass RLS) — nécessaire pour dériver l'org d'un appel réel
+  //    (pas de JWT user sur un webhook) et pour lire la clé API Ringover.
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SECRET_KEY!
@@ -134,84 +140,13 @@ export async function POST(req: NextRequest) {
     organizationId = org.id
   }
 
-  // Identité CRM pré-câblée par le simulateur (démo / multi-contacts) : on la
-  // persiste telle quelle. Un `deal_id` commun regroupe plusieurs appels (et
-  // contacts) en un seul deal sur /dashboard/deals. Null en appel réel : c'est
-  // l'enrichissement HubSpot qui remplira ces colonnes plus tard.
-  const simIdentity = simTranscriptRaw
-    ? {
-        contact_name: (simTranscriptRaw.contact_name as string | null) ?? null,
-        company_name: (simTranscriptRaw.company_name as string | null) ?? null,
-        deal_name: (simTranscriptRaw.deal_name as string | null) ?? null,
-        deal_id: (simTranscriptRaw.deal_id as string | null) ?? null,
-      }
-    : null
-
-  // Idempotence (issue #8) : un retry/replay signé du même call.ended réel ne
-  // doit pas créer de doublon ni re-déclencher une transcription payante. On
-  // upsert sur (organization_id, provider_call_id) en ignorant les conflits.
-  // L'index unique est partiel (where provider <> 'simulated') → les appels
-  // simulés gardent leur comportement « toujours insérer » (ids non uniques).
-  const callRow = {
-    organization_id: organizationId,
-    provider: simTranscript ? 'simulated' : 'ringover',
-    provider_call_id: call.id as string,
-    callee_number: call.to_number as string,
-    duration_seconds: call.duration as number,
-    audio_url: (call.recording_url as string) ?? null,
-    status: 'pending',
-    started_at: call.started_at as string,
-    // Rep propriétaire : fourni par le simulateur (user connecté). Null en
-    // appel Ringover réel tant que le mapping agent→profile n'existe pas
-    // (la colonne est nullable, idx_calls_user_id tolère les NULL).
-    ...(call.user_id ? { user_id: call.user_id } : {}),
-    ...(simIdentity?.contact_name ? { contact_name: simIdentity.contact_name } : {}),
-    ...(simIdentity?.company_name ? { company_name: simIdentity.company_name } : {}),
-    ...(simIdentity?.deal_name ? { deal_name: simIdentity.deal_name } : {}),
-    ...(simIdentity?.deal_id ? { deal_id: simIdentity.deal_id } : {}),
-  }
-
-  // Insertion + idempotence (issue #8). ⚠️ L'index unique est PARTIEL
-  // (`where provider <> 'simulated'`) → `ON CONFLICT (org, provider_call_id)`
-  // ne peut PAS l'inférer sans son prédicat (Postgres 42P10), et supabase-js ne
-  // permet pas de passer ce prédicat → un upsert plantait TOUTE insertion (réelle
-  // comme simulée). On fait donc un INSERT simple :
-  //   - simulé : ids uniques par timestamp, jamais de replay → insert direct ;
-  //   - réel   : un replay signé du même provider_call_id viole l'index partiel
-  //              (23505) → on l'attrape et on s'arrête AVANT la transcription.
-  const { data: insertedCall, error } = await supabase
-    .from('calls')
-    .insert(callRow)
-    .select('id')
-    .single()
-
-  if (error && (error as { code?: string }).code === '23505') {
-    console.log('[webhook/ringover] Replay ignoré pour', call.id)
-    return NextResponse.json({ received: true, duplicate: true })
-  }
-
-  if (error || !insertedCall) {
-    console.error('[webhook/ringover] Erreur insertion:', error)
-    Sentry.captureException(error ?? new Error('calls insert returned no row'), {
-      tags: { route: '/api/webhooks/ringover', stage: 'db_insert_call' },
-      extra: {
-        organizationId,
-        ringoverCallId: call.id,
-        eventType: payload.event,
-      },
-    })
-    return NextResponse.json({ error: 'DB error' }, { status: 500 })
-  }
-
-  console.log('[webhook/ringover] Appel inséré ✅', call.id, '→ DB id:', insertedCall.id)
-
-  // 8. Récupérer l'URL audio via l'API Ringover si :
-  //    - on n'est pas en mode simulation (sinon on a déjà le transcript)
-  //    - et l'URL n'était pas déjà fournie dans le payload du webhook
+  // 8. Résoudre l'URL audio AVANT l'ingestion (pour qu'elle parte dans l'insert).
+  //    On part de l'URL éventuellement fournie dans le payload, puis on retombe
+  //    sur l'API Ringover si nécessaire (appel réel sans recording_url).
   //
-  //    Décision archi 2026-05-13 : chaque client a sa propre clé API
-  //    Ringover stockée sur son organisation. On la lit ici (admin client,
-  //    bypass RLS) pour appeler /v2/calls/{id}/recording.
+  //    Décision archi 2026-05-13 : chaque client a sa propre clé API Ringover
+  //    stockée chiffrée sur son organisation. On la lit ici (admin client, bypass
+  //    RLS), on la déchiffre (issue #5) et on appelle /v2/calls/{id}/recording.
   let resolvedAudioUrl: string | null = (call.recording_url as string) ?? null
 
   if (!simTranscript && !resolvedAudioUrl) {
@@ -221,17 +156,10 @@ export async function POST(req: NextRequest) {
       .eq('id', organizationId)
       .single()
 
-    // Clé stockée chiffrée au repos (issue #5) → déchiffrement avant usage.
     const apiKey = decryptSecret((org?.ringover_api_key as string | null) ?? null)
     if (apiKey) {
       resolvedAudioUrl = await getRingoverCallRecording(call.id as string, apiKey)
-      if (resolvedAudioUrl) {
-        // On reflète l'URL dans la ligne calls pour traçabilité / retry.
-        await supabase
-          .from('calls')
-          .update({ audio_url: resolvedAudioUrl })
-          .eq('id', insertedCall.id)
-      } else {
+      if (!resolvedAudioUrl) {
         console.warn('[webhook/ringover] Pas de recording dispo via API pour', call.id)
       }
     } else {
@@ -242,37 +170,37 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 9. Déclencher la transcription dans after() : exécuté APRÈS l'envoi de la
-  //    réponse Ringover, mais Vercel garde la fonction vivante jusqu'au bout —
-  //    un fetch fire-and-forget nu pourrait être coupé avant de partir (gel serverless).
-  const transcribeUrl = new URL('/api/transcribe', req.url).toString()
-  after(async () => {
-    try {
-      const res = await fetch(transcribeUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
-        },
-        body: JSON.stringify({
-          callId: insertedCall.id,
-          ...(simTranscript ? { simTranscript } : {}),
-          // Passé uniquement en mode réel : /api/transcribe utilise audioUrl si
-          // présent, sinon retombe sur la valeur stockée en DB (audio_url).
-          ...(resolvedAudioUrl && !simTranscript ? { audioUrl: resolvedAudioUrl } : {}),
-        }),
-      })
-      if (!res.ok) {
-        throw new Error(`/api/transcribe a répondu ${res.status}`)
-      }
-    } catch (err) {
-      console.error('[webhook/ringover] Erreur déclenchement transcription:', err)
-      Sentry.captureException(err, {
-        tags: { route: '/api/webhooks/ringover', stage: 'trigger_transcribe' },
-        extra: { callId: insertedCall.id, organizationId },
-      })
-    }
-  })
+  // 9. Traduire vers la forme normalisée commune.
+  //    Identité CRM pré-câblée par le simulateur (démo / multi-contacts) : on la
+  //    persiste telle quelle. Un `deal_id` commun regroupe plusieurs appels en un
+  //    seul deal sur /dashboard/deals. Null en appel réel : c'est l'enrichissement
+  //    HubSpot qui remplira ces colonnes plus tard.
+  const recording: NormalizedRecording = {
+    provider: simTranscript ? 'simulated' : 'ringover',
+    providerCallId: call.id as string,
+    organizationId,
+    durationSeconds: (call.duration as number | undefined) ?? null,
+    startedAt: (call.started_at as string | undefined) ?? null,
+    calleeNumber: (call.to_number as string | undefined) ?? null,
+    audioUrl: resolvedAudioUrl,
+    // Rep propriétaire : fourni par le simulateur (user connecté). Null en appel
+    // Ringover réel tant que le mapping agent→profile n'existe pas.
+    userId: (call.user_id as string | null | undefined) ?? null,
+    contactName: (simTranscriptRaw?.contact_name as string | null | undefined) ?? null,
+    companyName: (simTranscriptRaw?.company_name as string | null | undefined) ?? null,
+    dealName: (simTranscriptRaw?.deal_name as string | null | undefined) ?? null,
+    dealId: (simTranscriptRaw?.deal_id as string | null | undefined) ?? null,
+    simTranscript,
+  }
 
+  // 10. Déléguer le commun (insertion idempotente + déclenchement transcription).
+  const result = await ingestRecording({ recording, triggerBaseUrl: req.url })
+
+  if (result.outcome === 'duplicate') {
+    return NextResponse.json({ received: true, duplicate: true })
+  }
+  if (result.outcome === 'error') {
+    return NextResponse.json({ error: 'DB error' }, { status: 500 })
+  }
   return NextResponse.json({ received: true })
 }
