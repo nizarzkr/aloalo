@@ -109,15 +109,31 @@ export async function listTranscripts(
   return data?.transcripts ?? [];
 }
 
-// Récupère les entrées d'une transcription, paginées, et les normalise au format
-// TranscriptSegment du pipeline (start/end en MILLISECONDES, speaker = identifiant
-// du participant). La résolution du NOM affichable du participant viendra en J43
-// (endpoint participants) — ici on garde l'id de participant comme libellé.
-export async function fetchTranscriptSegments(
+// Résout le nom affichable d'un participant (signedinUser / anonymousUser /
+// phoneUser ont chacun un displayName). Renvoie null si introuvable.
+export async function getParticipantName(
+  token: string,
+  participantResourceName: string,
+): Promise<string | null> {
+  const data = await meetGet<{
+    signedinUser?: { displayName?: string };
+    anonymousUser?: { displayName?: string };
+    phoneUser?: { displayName?: string };
+  }>(token, participantResourceName);
+  return (
+    data?.signedinUser?.displayName ??
+    data?.anonymousUser?.displayName ??
+    data?.phoneUser?.displayName ??
+    null
+  );
+}
+
+// Récupère TOUTES les entrées d'une transcription (paginées), brutes.
+export async function fetchTranscriptEntries(
   token: string,
   transcriptName: string,
-): Promise<TranscriptSegment[]> {
-  const segments: TranscriptSegment[] = [];
+): Promise<TranscriptEntry[]> {
+  const entries: TranscriptEntry[] = [];
   let pageToken: string | undefined;
 
   do {
@@ -127,29 +143,83 @@ export async function fetchTranscriptSegments(
       nextPageToken?: string;
     }>(token, `${transcriptName}/entries${qs}`);
     if (!data) break;
-
-    for (const e of data.transcriptEntries ?? []) {
-      segments.push({
-        // En J43 : remplacer par le displayName résolu via participants.get.
-        speaker: e.participant ?? "?",
-        text: e.text ?? "",
-        start: e.startTime ? toMillis(e.startTime) : 0,
-        end: e.endTime ? toMillis(e.endTime) : 0,
-      });
-    }
+    entries.push(...(data.transcriptEntries ?? []));
     pageToken = data.nextPageToken;
   } while (pageToken);
 
-  return segments;
+  return entries;
 }
 
-// Convertit un timestamp ISO en millisecondes relatives n'a pas de sens sans
-// origine ; les entrées Meet portent un timestamp ABSOLU. On renvoie l'epoch ms,
-// la normalisation en offset depuis le début de l'appel se fera en J43 au moment
-// de construire l'appel. Pour l'instant : epoch ms (suffisant pour l'ordre).
-function toMillis(iso: string): number {
-  const t = Date.parse(iso);
-  return Number.isNaN(t) ? 0 : t;
+export type MeetTranscriptResult = {
+  text: string; // "Nom: phrase\n…" (lisible + analysable par Claude)
+  segments: TranscriptSegment[]; // start/end RELATIFS au début, en millisecondes
+  durationSeconds: number;
+  startedAt: string | null; // ISO du début de la 1re prise de parole
+};
+
+// PURE (aucune I/O, testable) : normalise des entrées Meet (timestamps ABSOLUS
+// ISO) vers le format transcript du pipeline. Les segments portent des temps
+// RELATIFS au début (ms, comme AssemblyAI). `nameOf` résout l'identifiant de
+// participant en nom affichable (injecté → testable sans réseau).
+export function normalizeMeetEntries(
+  entries: TranscriptEntry[],
+  nameOf: (participant: string | undefined) => string,
+): MeetTranscriptResult {
+  const sorted = [...entries].sort((a, b) =>
+    (a.startTime ?? "").localeCompare(b.startTime ?? ""),
+  );
+  const origin =
+    sorted.length && sorted[0].startTime ? Date.parse(sorted[0].startTime) : 0;
+
+  let maxEnd = origin;
+  const segments: TranscriptSegment[] = [];
+  const lines: string[] = [];
+
+  for (const e of sorted) {
+    const name = nameOf(e.participant);
+    const startAbs = e.startTime ? Date.parse(e.startTime) : origin;
+    const endAbs = e.endTime ? Date.parse(e.endTime) : startAbs;
+    const start = Math.max(0, startAbs - origin);
+    const end = Math.max(start, endAbs - origin);
+    if (endAbs > maxEnd) maxEnd = endAbs;
+    segments.push({ speaker: name, text: e.text ?? "", start, end });
+    lines.push(`${name}: ${e.text ?? ""}`);
+  }
+
+  return {
+    text: lines.join("\n"),
+    segments,
+    durationSeconds: Math.max(0, Math.round((maxEnd - origin) / 1000)),
+    startedAt: sorted.length && sorted[0].startTime ? sorted[0].startTime! : null,
+  };
+}
+
+// Construit le transcript complet d'une réunion : entrées + noms de participants
+// résolus (mis en cache) → MeetTranscriptResult prêt pour l'ingestion. Renvoie
+// null si la conférence n'a pas de transcription exploitable.
+export async function buildMeetTranscript(
+  token: string,
+  conferenceRecordName: string,
+): Promise<MeetTranscriptResult | null> {
+  const transcripts = await listTranscripts(token, conferenceRecordName);
+  const transcript = transcripts[0];
+  if (!transcript) return null;
+
+  const entries = await fetchTranscriptEntries(token, transcript.name);
+  if (entries.length === 0) return null;
+
+  // Résout chaque participant une seule fois (cache resource name → nom).
+  const cache = new Map<string, string>();
+  const distinct = [
+    ...new Set(entries.map((e) => e.participant).filter(Boolean) as string[]),
+  ];
+  for (const p of distinct) {
+    cache.set(p, (await getParticipantName(token, p)) ?? "Participant");
+  }
+
+  return normalizeMeetEntries(entries, (p) =>
+    p ? cache.get(p) ?? "Participant" : "Participant",
+  );
 }
 
 // LE point d'entrée haut niveau pour l'UI (livrable J42) : à partir de l'orgId,

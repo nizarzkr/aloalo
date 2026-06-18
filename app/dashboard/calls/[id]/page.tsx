@@ -228,6 +228,7 @@ export default async function CallDetailPage({
       duration_seconds,
       status,
       error_message,
+      provider,
       transcript_segments,
       hubspot_sync_status,
       analyses (
@@ -277,6 +278,22 @@ export default async function CallDetailPage({
   const subtitleParts = [companyName, dealName].filter(Boolean) as string[];
 
   const segments = asArray<TranscriptSegment>(call.transcript_segments);
+
+  // Affichage des locuteurs :
+  //  - téléphonie/simulation : diarisation AssemblyAI → "A" = Commercial, autres
+  //    = Prospect (2 parties).
+  //  - visio Google Meet : les segments portent les VRAIS noms des participants.
+  //    On attribue un côté stable par locuteur (alternance d'apparition) et on
+  //    affiche le nom tel quel (peut dépasser 2 participants).
+  const isMeetTranscript = call.provider === "google_meet";
+  const meetLeftBySpeaker = new Map<string, boolean>();
+  if (isMeetTranscript) {
+    for (const s of segments) {
+      if (!meetLeftBySpeaker.has(s.speaker)) {
+        meetLeftBySpeaker.set(s.speaker, meetLeftBySpeaker.size % 2 === 0);
+      }
+    }
+  }
 
   // Métriques conversationnelles (J20). On privilégie la valeur PERSISTÉE
   // (calculée à l'analyse), avec un SECOURS de calcul à la volée depuis les
@@ -663,23 +680,32 @@ export default async function CallDetailPage({
         ) : (
           <ul className="space-y-3">
             {segments.map((seg, i) => {
-              const isCommercial = seg.speaker === "A";
+              // Côté gauche (mint) = commercial en téléphonie / 1er locuteur en
+              // visio. Libellé = vrai nom du participant en visio, sinon rôle.
+              const isLeft = isMeetTranscript
+                ? meetLeftBySpeaker.get(seg.speaker) ?? true
+                : seg.speaker === "A";
+              const speakerLabel = isMeetTranscript
+                ? seg.speaker
+                : isLeft
+                  ? "Commercial"
+                  : "Prospect";
               return (
                 <li
                   key={i}
                   className={cn(
                     "flex flex-col gap-1",
-                    isCommercial ? "items-start" : "items-end",
+                    isLeft ? "items-start" : "items-end",
                   )}
                 >
                   <div
                     className={cn(
                       "flex items-baseline gap-2 text-xs",
-                      isCommercial ? "" : "flex-row-reverse",
+                      isLeft ? "" : "flex-row-reverse",
                     )}
                   >
                     <span className="font-medium text-foreground">
-                      {isCommercial ? "Commercial" : "Prospect"}
+                      {speakerLabel}
                     </span>
                     <span className="text-muted-foreground tabular-nums">
                       {formatTimestamp(seg.start)}
@@ -688,7 +714,7 @@ export default async function CallDetailPage({
                   <p
                     className={cn(
                       "max-w-[90%] rounded-2xl px-3 py-2 text-sm md:max-w-[80%]",
-                      isCommercial
+                      isLeft
                         ? "bg-mint text-foreground"
                         : "bg-muted text-foreground",
                     )}

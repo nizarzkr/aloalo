@@ -90,14 +90,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: { callId?: string; audioUrl?: string; simTranscript?: SimTranscript }
+  let body: {
+    callId?: string
+    audioUrl?: string
+    simTranscript?: SimTranscript
+    providedTranscript?: SimTranscript
+  }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { callId, audioUrl, simTranscript } = body
+  const { callId, audioUrl, simTranscript, providedTranscript } = body
   if (!callId) {
     return NextResponse.json({ error: 'callId requis' }, { status: 400 })
   }
@@ -199,6 +204,60 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ success: true, mode: 'simulation' })
+  }
+
+  // ── MODE TRANSCRIPT FOURNI (ex : Google Meet) ────────────────────────────────
+  // La source a DÉJÀ transcrit (transcription native Meet) → on injecte tel quel,
+  // sans AssemblyAI. Contrairement à simTranscript, c'est une vraie donnée de
+  // PRODUCTION → pas de gate NODE_ENV. Coût de transcription nul (pas d'usage_log).
+  if (providedTranscript) {
+    console.log('[transcribe] Transcript fourni pour call:', callId)
+
+    const { error: updateError } = await supabase
+      .from('calls')
+      .update({
+        status: 'transcribed',
+        transcript_text: providedTranscript.text,
+        transcript_segments: providedTranscript.segments,
+        // duration_seconds est déjà posé par l'adaptateur d'ingestion ; on le
+        // confirme si la source l'a fourni.
+        ...(providedTranscript.duration_seconds
+          ? { duration_seconds: providedTranscript.duration_seconds }
+          : {}),
+      })
+      .eq('id', callId)
+
+    if (updateError) {
+      console.error('[transcribe] Erreur update transcript fourni:', updateError)
+      return NextResponse.json({ error: 'DB update error' }, { status: 500 })
+    }
+
+    console.log('[transcribe] ✅ Transcript fourni OK, call:', callId)
+
+    const appUrl = req.nextUrl.origin
+    after(async () => {
+      try {
+        const res = await fetch(`${appUrl}/api/analyze`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-aloalo-internal': process.env.INTERNAL_PIPELINE_SECRET ?? '',
+          },
+          body: JSON.stringify({ callId }),
+        })
+        if (!res.ok) {
+          throw new Error(`/api/analyze a répondu ${res.status}`)
+        }
+      } catch (err) {
+        console.error('[transcribe] Erreur déclenchement /api/analyze:', err)
+        Sentry.captureException(err, {
+          tags: { route: '/api/transcribe', stage: 'trigger_analyze' },
+          extra: { callId, organizationId: call.organization_id },
+        })
+      }
+    })
+
+    return NextResponse.json({ success: true, mode: 'provided' })
   }
 
   // ── MODE RÉEL ──────────────────────────────────────────────────────────────

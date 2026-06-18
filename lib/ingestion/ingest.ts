@@ -122,7 +122,12 @@ export async function ingestRecording({
           ...(isSimulation && recording.simTranscript
             ? { simTranscript: recording.simTranscript }
             : {}),
-          ...(!isSimulation && recording.audioUrl
+          // Transcript déjà fourni par la source (ex : Google Meet) → injecté tel
+          // quel, sans AssemblyAI, et accepté en production (≠ simTranscript dev).
+          ...(!isSimulation && recording.providedTranscript
+            ? { providedTranscript: recording.providedTranscript }
+            : {}),
+          ...(!isSimulation && !recording.providedTranscript && recording.audioUrl
             ? { audioUrl: recording.audioUrl }
             : {}),
         }),

@@ -70,6 +70,11 @@ export type NormalizedRecording = {
   // Transcript de simulation (mode dev). Présent ⇒ provider 'simulated', bypass
   // AssemblyAI (coût 0).
   simTranscript?: SimTranscript | null
+  // Transcript DÉJÀ FAIT par la source (ex : transcription native Google Meet),
+  // à injecter tel quel dans le pipeline sans AssemblyAI. Différent de
+  // simTranscript : c'est une vraie donnée de PRODUCTION (pas un mock dev), donc
+  // accepté en prod. Coût de transcription nul (la source l'a déjà transcrit).
+  providedTranscript?: SimTranscript | null
 }
 
 export type IngestOutcome = 'inserted' | 'duplicate' | 'error'
