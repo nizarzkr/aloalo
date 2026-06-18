@@ -16,7 +16,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { enrichCallFromHubspot } from '@/lib/hubspot-sync'
-import { decryptSecret } from '@/lib/crypto/org-secrets'
+import { getHubspotToken } from '@/lib/hubspot-oauth'
 
 function getAdminClient() {
   return createAdminClient(
@@ -65,15 +65,8 @@ export async function POST(
     return NextResponse.json({ error: 'not_found' }, { status: 404 })
   }
 
-  // 4. Token HubSpot de l'org
-  const { data: org } = await admin
-    .from('organizations')
-    .select('hubspot_token')
-    .eq('id', orgId)
-    .single()
-
-  // Token stocké chiffré au repos (issue #5) → déchiffrement avant usage.
-  const token = decryptSecret((org?.hubspot_token as string | null) ?? null)
+  // 4. Token HubSpot de l'org — OAuth (rafraîchi auto) avec repli legacy (J38).
+  const token = await getHubspotToken(orgId)
   if (!token) {
     return NextResponse.json({ error: 'hubspot_not_connected' }, { status: 400 })
   }

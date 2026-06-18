@@ -103,7 +103,7 @@ export async function getOnboardingState(
   const { data } = await admin()
     .from('organizations')
     .select(
-      'ringover_api_key, hubspot_token, hubspot_pipelines, hubspot_exit_criteria, onboarding_completed_at',
+      'ringover_api_key, hubspot_token, hubspot_refresh_token, hubspot_pipelines, hubspot_exit_criteria, onboarding_completed_at',
     )
     .eq('id', orgId)
     .maybeSingle()
@@ -117,7 +117,10 @@ export async function getOnboardingState(
   return deriveSteps(
     {
       hasRingoverKey: hasSecret(data?.ringover_api_key),
-      hasHubspotToken: hasSecret(data?.hubspot_token),
+      // Connecté = OAuth (refresh token, J38) OU legacy Private App token.
+      hasHubspotToken:
+        hasSecret(data?.hubspot_token) ||
+        hasSecret(data?.hubspot_refresh_token),
       // hubspot_pipelines : null = jamais synchronisé ; [] (improbable) = vide.
       hasPipelines: Array.isArray(pipelines) && pipelines.length > 0,
       // hubspot_exit_criteria : objet indexé par stageId ; non vide = au moins

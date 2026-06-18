@@ -70,7 +70,7 @@ export default async function OnboardingPage({
     getOnboardingState(orgId),
     admin
       .from("organizations")
-      .select("hubspot_portal_id, ringover_api_key, hubspot_token")
+      .select("hubspot_portal_id, ringover_api_key, hubspot_token, hubspot_refresh_token")
       .eq("id", orgId)
       .maybeSingle()
       .then((r) => r.data),
@@ -127,8 +127,10 @@ export default async function OnboardingPage({
 
       {activeStep === "hubspot" ? (
         <StepHubspot
-          hasHubspotToken={hasSecret(org?.hubspot_token)}
-          portalId={org?.hubspot_portal_id ?? ""}
+          hasHubspotToken={
+            hasSecret(org?.hubspot_token) ||
+            hasSecret(org?.hubspot_refresh_token)
+          }
           pipelines={pipelines}
           syncedAt={syncedAt}
           done={state.steps.hubspot}

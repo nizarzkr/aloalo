@@ -20,6 +20,7 @@ import {
   saveStageExitCriteria,
 } from "@/lib/exit-criteria";
 import { testHubspotConnection } from "@/lib/hubspot";
+import { getHubspotToken } from "@/lib/hubspot-oauth";
 import { syncOrgPipelines } from "@/lib/hubspot-pipelines";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -434,12 +435,8 @@ export async function refreshHubspotPipelines(): Promise<PipelineRefreshResult> 
     return { ok: false, error: "Seul le propriétaire peut rafraîchir le tunnel." };
   }
 
-  const { data: org } = await admin
-    .from("organizations")
-    .select("hubspot_token")
-    .eq("id", profile.organization_id)
-    .single();
-  const token = decryptSecret(org?.hubspot_token ?? null);
+  // OAuth (rafraîchi auto) avec repli sur le legacy hubspot_token (J38).
+  const token = await getHubspotToken(profile.organization_id);
   if (!token) return { ok: false, error: "HubSpot n'est pas connecté." };
 
   const result = await syncOrgPipelines(profile.organization_id, token);
@@ -455,6 +452,50 @@ export async function refreshHubspotPipelines(): Promise<PipelineRefreshResult> 
     ok: true,
     message: `Tunnel synchronisé : ${result.pipelineCount} pipeline${result.pipelineCount > 1 ? "s" : ""}, ${result.stageCount} phases.`,
   };
+}
+
+// ============================================================================
+// disconnectHubspot — déconnecte le CRM (J38)
+// ============================================================================
+// Bouton « Déconnecter » (page Intégrations). Efface les jetons OAuth ET le
+// jeton legacy → getHubspotToken renverra null (déconnecté). Owner only. On
+// laisse portal_id / tunnel / critères en place (réutilisés à la reconnexion).
+export async function disconnectHubspot(): Promise<UpdateOrgResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Session expirée. Reconnectez-vous." };
+
+  const admin = getAdminClient();
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("organization_id, role")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.organization_id) return { ok: false, error: "Profil introuvable." };
+  if (profile.role !== "owner") {
+    return { ok: false, error: "Seul le propriétaire peut déconnecter HubSpot." };
+  }
+
+  const { error } = await admin
+    .from("organizations")
+    .update({
+      hubspot_access_token: null,
+      hubspot_refresh_token: null,
+      hubspot_token_expires_at: null,
+      hubspot_token: null,
+    })
+    .eq("id", profile.organization_id);
+
+  if (error) {
+    return { ok: false, error: "Impossible de déconnecter HubSpot." };
+  }
+
+  revalidatePath("/dashboard/settings/integrations");
+  revalidatePath("/onboarding");
+  return { ok: true, message: "HubSpot déconnecté." };
 }
 
 // ============================================================================
@@ -491,12 +532,8 @@ async function ownerOrgWithToken(): Promise<
     return { ok: false, error: "Seul le propriétaire peut gérer les critères de sortie." };
   }
 
-  const { data: org } = await admin
-    .from("organizations")
-    .select("hubspot_token")
-    .eq("id", profile.organization_id)
-    .single();
-  const token = decryptSecret(org?.hubspot_token ?? null);
+  // OAuth (rafraîchi auto) avec repli sur le legacy hubspot_token (J38).
+  const token = await getHubspotToken(profile.organization_id);
 
   return { ok: true, orgId: profile.organization_id, token };
 }

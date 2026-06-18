@@ -9,6 +9,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { hasSecret } from "@/lib/crypto/org-secrets";
 import { getOrgPipelines } from "@/lib/hubspot-pipelines";
 import { CopyButton } from "@/components/dashboard/copy-button";
+import { HubspotConnection } from "@/components/dashboard/hubspot-connection";
 import { HubspotSettingsForm } from "@/components/dashboard/hubspot-settings-form";
 import { PipelineRefreshButton } from "@/components/dashboard/pipeline-refresh-button";
 import { RingoverKeyForm } from "@/components/dashboard/ringover-key-form";
@@ -26,7 +27,12 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export default async function IntegrationsSettingsPage() {
+export default async function IntegrationsSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ hubspot?: string }>;
+}) {
+  const { hubspot: hubspotStatus } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -52,7 +58,9 @@ export default async function IntegrationsSettingsPage() {
   const { data: org } = profile?.organization_id
     ? await admin
         .from("organizations")
-        .select("ringover_api_key, hubspot_token, hubspot_portal_id")
+        .select(
+          "ringover_api_key, hubspot_token, hubspot_refresh_token, hubspot_portal_id",
+        )
         .eq("id", profile.organization_id)
         .maybeSingle()
     : { data: null };
@@ -61,7 +69,11 @@ export default async function IntegrationsSettingsPage() {
   // On ne lit que la PRÉSENCE des secrets (chiffrés OU legacy clair), jamais
   // leur valeur — et on ne déchiffre rien ici.
   const hasRingoverKey = hasSecret(org?.ringover_api_key);
-  const hasHubspotToken = hasSecret(org?.hubspot_token);
+  // OAuth (J38) = présence d'un refresh token ; legacy = ancien Private App
+  // token collé à la main. « Connecté » dès que l'un des deux existe.
+  const hasHubspotOAuth = hasSecret(org?.hubspot_refresh_token);
+  const hasHubspotLegacy = hasSecret(org?.hubspot_token);
+  const hasHubspotToken = hasHubspotOAuth || hasHubspotLegacy;
   const hubspotPortalId = org?.hubspot_portal_id ?? "";
 
   // Carte du tunnel HubSpot (J27) — affichée si HubSpot est connecté.
@@ -175,7 +187,7 @@ export default async function IntegrationsSettingsPage() {
                     variant="outline"
                     className="border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                   >
-                    Configuré
+                    {hasHubspotOAuth ? "Connecté" : "Connecté (legacy)"}
                   </Badge>
                 ) : (
                   <Badge
@@ -188,11 +200,44 @@ export default async function IntegrationsSettingsPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              <HubspotSettingsForm
-                canEdit={isOwner}
-                hasToken={hasHubspotToken}
-                defaultPortalId={hubspotPortalId}
-              />
+              {/* Bandeau de retour du flux OAuth (?hubspot=...) */}
+              {hubspotStatus === "connected" ? (
+                <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+                  HubSpot connecté. Le tunnel a été synchronisé.
+                </div>
+              ) : hubspotStatus === "denied" ? (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+                  Autorisation refusée côté HubSpot. La connexion n&apos;a pas
+                  été établie.
+                </div>
+              ) : hubspotStatus === "error" ? (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                  La connexion HubSpot a échoué. Réessayez ; si le problème
+                  persiste, contactez le support.
+                </div>
+              ) : null}
+
+              <HubspotConnection connected={hasHubspotToken} canEdit={isOwner} />
+
+              {/* Repli avancé : ancien token « Private App » collé à la main.
+                  Conservé pour les portails qui ne passent pas par l'OAuth.
+                  getHubspotToken privilégie toujours l'OAuth (J38). */}
+              <details className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+                <summary className="cursor-pointer font-medium text-foreground">
+                  Avancé : utiliser un token Private App
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    À réserver aux cas où l&apos;OAuth n&apos;est pas possible. La
+                    connexion en un clic ci-dessus est recommandée.
+                  </p>
+                  <HubspotSettingsForm
+                    canEdit={isOwner}
+                    hasToken={hasHubspotLegacy}
+                    defaultPortalId={hubspotPortalId}
+                  />
+                </div>
+              </details>
 
               {/* --- Tunnel HubSpot (J27) : carte des pipelines + phases ---- */}
               {hasHubspotToken ? (

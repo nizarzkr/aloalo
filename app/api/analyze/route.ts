@@ -35,7 +35,7 @@ import {
 import type { HubspotTarget } from '@/lib/hubspot'
 import { enrichCallFromHubspot } from '@/lib/hubspot-sync'
 import { computeDealHygiene } from '@/lib/hygiene/compute'
-import { decryptSecret } from '@/lib/crypto/org-secrets'
+import { getHubspotToken } from '@/lib/hubspot-oauth'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { computeConversationMetrics } from '@/lib/metrics/conversation'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
   // que la page détail saura reconnaître pour afficher la bannière upgrade.
   const { data: org } = await supabase
     .from('organizations')
-    .select('subscription_status, subscription_plan, ai_profile, hubspot_token, hubspot_portal_id')
+    .select('subscription_status, subscription_plan, ai_profile, hubspot_portal_id')
     .eq('id', call.organization_id)
     .single()
 
@@ -347,8 +347,8 @@ export async function POST(req: NextRequest) {
   //    dégradé, le pipeline d'analyse reste OK quoi qu'il arrive.
   const contactName = (call.contact_name as string | null) ?? null
   const phone = (call.callee_number as string | null) ?? null
-  // Token stocké chiffré au repos (issue #5) → déchiffrement avant usage.
-  const hubspotToken = decryptSecret((org?.hubspot_token as string | null) ?? null)
+  // OAuth (rafraîchi auto) avec repli sur le legacy hubspot_token (J38).
+  const hubspotToken = await getHubspotToken(call.organization_id)
 
   after(async () => {
     // Forme du jsonb : cf. migrations 0010 / 0011.

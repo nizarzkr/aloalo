@@ -6,7 +6,11 @@
     "name": "aloalo-crm-card-App",
     "distribution": "private",
     "auth": {
-      "type": "static",
+      "type": "oauth",
+      "redirectUrls": [
+        "https://aloalo-three.vercel.app/api/hubspot/oauth/callback",
+        "http://localhost:3000/api/hubspot/oauth/callback"
+      ],
       "requiredScopes": [
         "oauth",
         "crm.objects.contacts.read",

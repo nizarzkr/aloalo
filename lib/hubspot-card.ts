@@ -17,7 +17,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { getContact, getDealCalls } from '@/lib/hubspot'
-import { decryptSecret } from '@/lib/crypto/org-secrets'
+import { getHubspotToken } from '@/lib/hubspot-oauth'
 import { summarizeDimensions } from '@/lib/metrics/dimensions-summary'
 
 // Données affichables de la carte (dernier appel analysé du contact).
@@ -116,14 +116,14 @@ export async function getContactCardData({
   // 1. portalId → org Aloalo
   const { data: org } = await supabase
     .from('organizations')
-    .select('id, hubspot_token')
+    .select('id')
     .eq('hubspot_portal_id', portalId)
     .limit(1)
     .maybeSingle()
 
   if (!org) return { message: 'Portail non configuré dans Aloalo' }
-  // Token stocké chiffré au repos (issue #5) → déchiffrement avant usage.
-  const hubspotToken = decryptSecret(org.hubspot_token)
+  // OAuth (rafraîchi auto) avec repli sur le legacy hubspot_token (J38).
+  const hubspotToken = await getHubspotToken(org.id)
   if (!hubspotToken) {
     return { message: 'Connexion HubSpot incomplète côté Aloalo' }
   }
@@ -227,14 +227,14 @@ export async function getDealCardData({
   // 1. portalId → org Aloalo
   const { data: org } = await supabase
     .from('organizations')
-    .select('id, hubspot_token')
+    .select('id')
     .eq('hubspot_portal_id', portalId)
     .limit(1)
     .maybeSingle()
 
   if (!org) return { message: 'Portail non configuré dans Aloalo' }
-  // Token stocké chiffré au repos (issue #5) → déchiffrement avant usage.
-  const hubspotToken = decryptSecret(org.hubspot_token)
+  // OAuth (rafraîchi auto) avec repli sur le legacy hubspot_token (J38).
+  const hubspotToken = await getHubspotToken(org.id)
   if (!hubspotToken) {
     return { message: 'Connexion HubSpot incomplète côté Aloalo' }
   }

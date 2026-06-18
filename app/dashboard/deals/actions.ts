@@ -22,7 +22,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 import { createClient } from '@/lib/supabase/server'
-import { decryptSecret } from '@/lib/crypto/org-secrets'
+import { getHubspotToken } from '@/lib/hubspot-oauth'
 import {
   createTask,
   getMostRecentDealForContact,
@@ -172,13 +172,8 @@ export async function pushCoachingAction(
     .maybeSingle()
   if (existing) return { ok: true, already: true }
 
-  // 3. Token HubSpot (chiffré au repos, issue #5).
-  const { data: org } = await admin
-    .from('organizations')
-    .select('hubspot_token')
-    .eq('id', orgId)
-    .maybeSingle()
-  const token = decryptSecret((org?.hubspot_token as string | null) ?? null)
+  // 3. Token HubSpot — OAuth (rafraîchi auto) avec repli legacy (J38).
+  const token = await getHubspotToken(orgId)
   if (!token) return { ok: false, reason: 'not_connected' }
 
   // 4. Recalcule l'alerte côté serveur (source de vérité — jamais le client).
@@ -300,13 +295,8 @@ export async function pushHygieneFix(
     .maybeSingle()
   if (existing) return { ok: true, already: true }
 
-  // 3. Token HubSpot (chiffré au repos).
-  const { data: org } = await admin
-    .from('organizations')
-    .select('hubspot_token')
-    .eq('id', orgId)
-    .maybeSingle()
-  const token = decryptSecret((org?.hubspot_token as string | null) ?? null)
+  // 3. Token HubSpot — OAuth (rafraîchi auto) avec repli legacy (J38).
+  const token = await getHubspotToken(orgId)
   if (!token) return { ok: false, reason: 'not_connected' }
 
   // 4. Recalcule l'hygiène côté serveur (source de vérité — jamais le client)

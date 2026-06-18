@@ -10,23 +10,21 @@
 
 import { Plug } from "lucide-react";
 
-import { HubspotSettingsForm } from "@/components/dashboard/hubspot-settings-form";
+import { HubspotConnection } from "@/components/dashboard/hubspot-connection";
 import { TunnelPreview } from "@/components/dashboard/tunnel-preview";
 import { OnboardingNav } from "@/components/onboarding/onboarding-nav";
 import type { HubspotPipeline } from "@/lib/hubspot";
 
 type Props = {
   hasHubspotToken: boolean;
-  portalId: string;
   pipelines: HubspotPipeline[];
   syncedAt: string | null;
-  /** Étape validée = token présent ET tunnel synchronisé. */
+  /** Étape validée = connecté ET tunnel synchronisé. */
   done: boolean;
 };
 
 export function StepHubspot({
   hasHubspotToken,
-  portalId,
   pipelines,
   syncedAt,
   done,
@@ -48,8 +46,12 @@ export function StepHubspot({
       </div>
 
       <div className="space-y-6 rounded-lg border border-border bg-background p-5">
-        {/* Formulaire HubSpot réutilisé (auto-sync du tunnel à la connexion) */}
-        <HubspotSettingsForm canEdit hasToken={hasHubspotToken} defaultPortalId={portalId} />
+        {/* Connexion en un clic via OAuth (J38) — retour sur l'onboarding. */}
+        <HubspotConnection
+          connected={hasHubspotToken}
+          canEdit
+          startUrl="/api/hubspot/oauth/start?return=onboarding"
+        />
 
         {/* Le « waouh » : aperçu du tunnel remonté de HubSpot, une fois connecté. */}
         {hasHubspotToken ? (
@@ -58,46 +60,14 @@ export function StepHubspot({
             {pipelines.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 Connexion enregistrée. Si le tunnel ne s&apos;affiche pas tout de
-                suite, revérifiez les autorisations du token (lecture des deals et
-                pipelines).
+                suite, vérifiez que l&apos;app dispose bien des autorisations de
+                lecture des deals et pipelines.
               </p>
             ) : (
               <TunnelPreview pipelines={pipelines} syncedAt={syncedAt} />
             )}
           </div>
         ) : null}
-
-        {/* Aide pas-à-pas (pliable) */}
-        <details className="rounded-md border border-border bg-muted/40 p-3 text-sm">
-          <summary className="cursor-pointer font-medium text-foreground">
-            Comment créer mon token Private App&nbsp;?
-          </summary>
-          <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-xs text-muted-foreground">
-            <li>
-              Dans HubSpot, ouvrez <strong>Paramètres</strong> (la roue dentée)
-              &rsaquo; <strong>Intégrations</strong> &rsaquo;{" "}
-              <strong>Applications privées</strong>.
-            </li>
-            <li>
-              Cliquez sur <strong>Créer une application privée</strong>, nommez-la
-              « Aloalo ».
-            </li>
-            <li>
-              Onglet <strong>Scopes</strong> : cochez la lecture des{" "}
-              <strong>contacts</strong>, <strong>entreprises</strong>,{" "}
-              <strong>deals</strong> (crm.objects.*.read) et la lecture/écriture
-              des <strong>tâches</strong> (pour pousser les suivis).
-            </li>
-            <li>
-              Créez l&apos;application, puis copiez le{" "}
-              <strong>token d&apos;accès</strong> (pat-…) dans le champ ci-dessus.
-            </li>
-            <li>
-              Le <strong>Hub ID</strong> est le numéro en haut à droite de votre
-              compte HubSpot.
-            </li>
-          </ol>
-        </details>
       </div>
 
       <OnboardingNav nextStep="criteria" done={done} />
