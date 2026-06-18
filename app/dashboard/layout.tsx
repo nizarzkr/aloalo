@@ -55,6 +55,7 @@ export default async function DashboardLayout({
         fullName={profile?.full_name ?? ""}
         organizationName={organization?.name ?? ""}
         email={profile?.email ?? user.email ?? ""}
+        role={profile?.role ?? "sales"}
       />
       <main className="flex-1 overflow-x-hidden">{children}</main>
     </div>

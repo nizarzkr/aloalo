@@ -14,6 +14,11 @@ import { CallStatusBadge } from "@/components/dashboard/call-status-badge";
 import { DimensionsDots } from "@/components/dashboard/dimensions-dots";
 import { ListAutoRefresh } from "@/components/dashboard/list-auto-refresh";
 import { OnboardingBanner } from "@/components/dashboard/onboarding-banner";
+import {
+  SalesHome,
+  type SalesCall,
+  type SalesNextTask,
+} from "@/components/dashboard/sales-home";
 import { revalidateDashboardHome } from "@/app/dashboard/calls/actions";
 import { Badge } from "@/components/ui/badge";
 import { DealHygieneBadge } from "@/components/dashboard/deal-hygiene-badge";
@@ -79,6 +84,89 @@ export default async function DashboardPage() {
   const fullName = profile?.full_name ?? "";
   const firstName = fullName.trim().split(/\s+/)[0] || "";
   const orgId = profile?.organization_id ?? null;
+  const orgFilter = orgId ?? "00000000-0000-0000-0000-000000000000";
+
+  // --- Home COMMERCIALE (sales) : vue personnelle et bienveillante (J34) ----
+  // Centrée sur SON travail (pas d'org-level, pas de cadran « risque »). On lit
+  // ses derniers appels + les suggested_tasks déjà produites par l'IA.
+  if (profile?.role === "sales") {
+    const [myCallsRes, myInProgressRes] = await Promise.all([
+      supabase
+        .from("calls")
+        .select(
+          "id, started_at, created_at, duration_seconds, status, contact_name, callee_number, company_name, deal_name, analyses ( dimensions, suggested_tasks )",
+        )
+        .eq("organization_id", orgFilter)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(10),
+      supabase
+        .from("calls")
+        .select("id, status")
+        .eq("organization_id", orgFilter)
+        .eq("user_id", user.id)
+        .in("status", [...IN_PROGRESS_STATUSES]),
+    ]);
+
+    const myCalls = myCallsRes.data ?? [];
+
+    // Normalise l'embed FK 1-to-1 (objet ou tableau selon le client).
+    const analysisOf = (rel: unknown) =>
+      (Array.isArray(rel) ? rel[0] : rel) as
+        | { dimensions: unknown; suggested_tasks: unknown }
+        | undefined;
+
+    const calls: SalesCall[] = myCalls.map((c) => {
+      const a = analysisOf(c.analyses);
+      const subtitle =
+        [c.company_name, c.deal_name].filter(Boolean).join(" · ") || null;
+      return {
+        id: c.id,
+        contactLabel: c.contact_name ?? c.callee_number ?? "Appel sans contact",
+        subtitle,
+        dateRef: c.started_at ?? c.created_at,
+        durationSeconds: c.duration_seconds,
+        status: c.status as string,
+        dimensions: a?.dimensions ?? null,
+      };
+    });
+
+    // Aplatit les tâches suggérées de tous ses appels, triées par échéance.
+    const nextTasks: SalesNextTask[] = myCalls
+      .flatMap((c) => {
+        const a = analysisOf(c.analyses);
+        const tasks = Array.isArray(a?.suggested_tasks)
+          ? (a.suggested_tasks as Array<{ title?: string; due_date?: string }>)
+          : [];
+        const contactLabel =
+          c.contact_name ?? c.callee_number ?? "Appel sans contact";
+        return tasks
+          .filter((t) => typeof t?.title === "string" && t.title.trim())
+          .map((t) => ({
+            title: t.title as string,
+            dueDate: typeof t.due_date === "string" ? t.due_date : null,
+            callId: c.id,
+            contactLabel,
+          }));
+      })
+      .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"))
+      .slice(0, 5);
+
+    const myInProgress = (myInProgressRes.data ?? []) as Array<{
+      id: string;
+      status: string;
+    }>;
+
+    return (
+      <SalesHome
+        firstName={firstName}
+        nextTasks={nextTasks}
+        calls={calls}
+        liveSignature={buildSignature(myInProgress)}
+        liveActive={myInProgress.length > 0}
+      />
+    );
+  }
 
   // Bandeau de reprise d'onboarding (J29) : visible uniquement pour un owner qui
   // a « passé pour l'instant » (sinon le layout l'aurait redirigé vers
@@ -93,9 +181,8 @@ export default async function DashboardPage() {
   const now = new Date();
   const weekStartIso = startOfCurrentWeek(now).toISOString();
 
-  // RLS scope déjà à l'org du JWT, mais on filtre explicitement par défense
-  // en profondeur — et pour court-circuiter si l'org n'est pas encore connue.
-  const orgFilter = orgId ?? "00000000-0000-0000-0000-000000000000";
+  // RLS scope déjà à l'org du JWT, mais `orgFilter` (défini plus haut) filtre
+  // aussi explicitement par défense en profondeur.
 
   const [
     weekCallsRes,

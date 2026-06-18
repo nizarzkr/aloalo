@@ -35,7 +35,7 @@ export default async function AiProfileSettingsPage() {
     <div>
       <SectionHeading
         icon={Sparkles}
-        title="Profil IA"
+        title="Contexte commercial"
         description="Ce contexte est injecté dans l'analyse IA de chaque appel. Plus il est précis, plus le coaching généré est pertinent pour votre équipe."
       />
       <Card>

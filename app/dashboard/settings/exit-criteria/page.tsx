@@ -49,7 +49,7 @@ export default async function ExitCriteriaSettingsPage() {
   const heading = (
     <SectionHeading
       icon={ListChecks}
-      title="Critères de sortie"
+      title="Définition de la qualité"
       description="Définissez, pour chaque phase de votre tunnel, ce qui doit être vrai pour qu'un deal avance. L'IA propose, vous ajustez."
     />
   );

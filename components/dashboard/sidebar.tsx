@@ -20,19 +20,53 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+type Role = "owner" | "manager" | "sales";
+
 type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
 };
 
-const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/calls", label: "Appels", icon: Phone },
-  { href: "/dashboard/deals", label: "Deals", icon: Briefcase },
-  { href: "/dashboard/team", label: "Équipe", icon: Users },
-  { href: "/dashboard/settings", label: "Paramètres", icon: Settings },
+// Navigation organisée par AXE DE BÉNÉFICE (J34) plutôt que par objet de données.
+// Chaque groupe = un job : Piloter (owner/manager), Coacher (owner/manager),
+// Travailler (tous). Accueil + Paramètres restent hors groupe (haut / bas).
+// `roles` = qui voit le groupe ; un groupe sans item visible n'affiche pas son titre.
+type NavGroup = {
+  title: string;
+  roles: Role[];
+  items: NavItem[];
+};
+
+const topItem: NavItem = {
+  href: "/dashboard",
+  label: "Accueil",
+  icon: LayoutDashboard,
+};
+
+const navGroups: NavGroup[] = [
+  {
+    title: "Piloter",
+    roles: ["owner", "manager"],
+    items: [{ href: "/dashboard/deals", label: "Pipeline", icon: Briefcase }],
+  },
+  {
+    title: "Coacher",
+    roles: ["owner", "manager"],
+    items: [{ href: "/dashboard/team", label: "Mon équipe", icon: Users }],
+  },
+  {
+    title: "Travailler",
+    roles: ["owner", "manager", "sales"],
+    items: [{ href: "/dashboard/calls", label: "Mes appels", icon: Phone }],
+  },
 ];
+
+const bottomItem: NavItem = {
+  href: "/dashboard/settings",
+  label: "Paramètres",
+  icon: Settings,
+};
 
 // Évite que /dashboard reste actif quand on est sur /dashboard/calls.
 function isActive(pathname: string, href: string) {
@@ -51,17 +85,50 @@ type SidebarProps = {
   fullName: string;
   organizationName: string;
   email: string;
+  role: Role;
 };
+
+// Lien de navigation réutilisable (item simple haut/bas + items de groupe).
+function NavLink({
+  item,
+  active,
+  onNavigate,
+}: {
+  item: NavItem;
+  active: boolean;
+  onNavigate?: () => void;
+}) {
+  const { href, label, icon: Icon } = item;
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      className={cn(
+        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+        active
+          ? "bg-mint text-foreground"
+          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+      )}
+    >
+      <Icon className="size-4" />
+      {label}
+    </Link>
+  );
+}
 
 // Contenu de la sidebar — partagé entre desktop (fixe) et mobile (drawer).
 function SidebarContent({
   fullName,
   organizationName,
   email,
+  role,
   onNavigate,
 }: SidebarProps & { onNavigate?: () => void }) {
   const pathname = usePathname();
   const displayName = fullName.trim() || email;
+
+  // Groupes visibles selon le rôle (sales ne voit ni Piloter ni Coacher).
+  const visibleGroups = navGroups.filter((g) => g.roles.includes(role));
 
   return (
     <>
@@ -76,27 +143,46 @@ function SidebarContent({
       </div>
 
       <nav className="flex-1 px-3 py-4">
+        {/* Accueil — hors groupe, en haut */}
         <ul className="flex flex-col gap-1">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const active = isActive(pathname, href);
-            return (
-              <li key={href}>
-                <Link
-                  href={href}
-                  onClick={onNavigate}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                    active
-                      ? "bg-mint text-foreground"
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                  )}
-                >
-                  <Icon className="size-4" />
-                  {label}
-                </Link>
-              </li>
-            );
-          })}
+          <li>
+            <NavLink
+              item={topItem}
+              active={isActive(pathname, topItem.href)}
+              onNavigate={onNavigate}
+            />
+          </li>
+        </ul>
+
+        {/* Groupes par axe de bénéfice */}
+        {visibleGroups.map((group) => (
+          <div key={group.title} className="mt-5">
+            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              {group.title}
+            </p>
+            <ul className="flex flex-col gap-1">
+              {group.items.map((item) => (
+                <li key={item.href}>
+                  <NavLink
+                    item={item}
+                    active={isActive(pathname, item.href)}
+                    onNavigate={onNavigate}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+
+        {/* Paramètres — hors groupe, en bas de la nav */}
+        <ul className="mt-5 flex flex-col gap-1 border-t border-border/60 pt-4">
+          <li>
+            <NavLink
+              item={bottomItem}
+              active={isActive(pathname, bottomItem.href)}
+              onNavigate={onNavigate}
+            />
+          </li>
         </ul>
       </nav>
 
