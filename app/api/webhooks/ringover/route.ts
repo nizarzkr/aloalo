@@ -152,35 +152,40 @@ export async function POST(req: NextRequest) {
   // upsert sur (organization_id, provider_call_id) en ignorant les conflits.
   // L'index unique est partiel (where provider <> 'simulated') → les appels
   // simulés gardent leur comportement « toujours insérer » (ids non uniques).
+  const callRow = {
+    organization_id: organizationId,
+    provider: simTranscript ? 'simulated' : 'ringover',
+    provider_call_id: call.id as string,
+    callee_number: call.to_number as string,
+    duration_seconds: call.duration as number,
+    audio_url: (call.recording_url as string) ?? null,
+    status: 'pending',
+    started_at: call.started_at as string,
+    // Rep propriétaire : fourni par le simulateur (user connecté). Null en
+    // appel Ringover réel tant que le mapping agent→profile n'existe pas
+    // (la colonne est nullable, idx_calls_user_id tolère les NULL).
+    ...(call.user_id ? { user_id: call.user_id } : {}),
+    ...(simIdentity?.contact_name ? { contact_name: simIdentity.contact_name } : {}),
+    ...(simIdentity?.company_name ? { company_name: simIdentity.company_name } : {}),
+    ...(simIdentity?.deal_name ? { deal_name: simIdentity.deal_name } : {}),
+    ...(simIdentity?.deal_id ? { deal_id: simIdentity.deal_id } : {}),
+  }
+
+  // Insertion + idempotence (issue #8). ⚠️ L'index unique est PARTIEL
+  // (`where provider <> 'simulated'`) → `ON CONFLICT (org, provider_call_id)`
+  // ne peut PAS l'inférer sans son prédicat (Postgres 42P10), et supabase-js ne
+  // permet pas de passer ce prédicat → un upsert plantait TOUTE insertion (réelle
+  // comme simulée). On fait donc un INSERT simple :
+  //   - simulé : ids uniques par timestamp, jamais de replay → insert direct ;
+  //   - réel   : un replay signé du même provider_call_id viole l'index partiel
+  //              (23505) → on l'attrape et on s'arrête AVANT la transcription.
   const { data: insertedCall, error } = await supabase
     .from('calls')
-    .upsert(
-      {
-        organization_id: organizationId,
-        provider: simTranscript ? 'simulated' : 'ringover',
-        provider_call_id: call.id as string,
-        callee_number: call.to_number as string,
-        duration_seconds: call.duration as number,
-        audio_url: (call.recording_url as string) ?? null,
-        status: 'pending',
-        started_at: call.started_at as string,
-        // Rep propriétaire : fourni par le simulateur (user connecté). Null en
-        // appel Ringover réel tant que le mapping agent→profile n'existe pas
-        // (la colonne est nullable, idx_calls_user_id tolère les NULL).
-        ...(call.user_id ? { user_id: call.user_id } : {}),
-        ...(simIdentity?.contact_name ? { contact_name: simIdentity.contact_name } : {}),
-        ...(simIdentity?.company_name ? { company_name: simIdentity.company_name } : {}),
-        ...(simIdentity?.deal_name ? { deal_name: simIdentity.deal_name } : {}),
-        ...(simIdentity?.deal_id ? { deal_id: simIdentity.deal_id } : {}),
-      },
-      { onConflict: 'organization_id,provider_call_id', ignoreDuplicates: true },
-    )
+    .insert(callRow)
     .select('id')
-    .maybeSingle()
+    .single()
 
-  // Conflit (replay) → ignoreDuplicates renvoie 0 ligne sans erreur : on s'arrête
-  // AVANT de re-déclencher la transcription.
-  if (!error && !insertedCall) {
+  if (error && (error as { code?: string }).code === '23505') {
     console.log('[webhook/ringover] Replay ignoré pour', call.id)
     return NextResponse.json({ received: true, duplicate: true })
   }
