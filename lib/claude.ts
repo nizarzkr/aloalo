@@ -1018,3 +1018,198 @@ export async function evaluateDealHygiene(
     },
   }
 }
+
+// ===========================================================================
+// J35 — Synthèse de briefing 1:1 (coaching manager, ton BIENVEILLANT)
+// ===========================================================================
+// À partir d'agrégats DÉJÀ calculés (dimensions, tendance, thèmes de coaching —
+// pas de transcription), Claude rédige un briefing de 1:1 motivant : on ouvre
+// par ce qui progresse, on ne retient QU'UN seul axe à travailler, on parle
+// « ensemble / piste à tester ». Objectif = confiance et progression, jamais le
+// flicage. Sortie forcée via tool use → JSON garanti.
+
+// Agrégats d'une dimension sur la période (déterministes, calculés en amont).
+export type OneOnOneDimensionStat = {
+  key: DimensionKey
+  label: string // libellé FR lisible (ex. « Découverte »)
+  missedRate: number // part d'appels où la dimension est manquée (0-1)
+  partialRate: number // part « partielle » (0-1)
+}
+
+export type OneOnOneInput = {
+  repName: string
+  periodLabel: string // ex. « ce mois », « ce trimestre »
+  callCount: number
+  avgValidated: number | null // moyenne de dimensions validées (0-5) sur la période
+  prevAvgValidated: number | null // même moyenne sur la période précédente (comparaison)
+  dimensions: OneOnOneDimensionStat[]
+  recurringCoaching: string[] // thèmes de coaching_advice revenus le plus souvent
+  previousFocusAxis: string | null // axe du dernier 1:1 (continuité), null si premier
+}
+
+export type OneOnOneBrief = {
+  wins: string[] // 2-3 points positifs concrets
+  focus: { axis_label: string; why: string; suggestion: string } // UN seul axe
+  encouragement: string // une phrase de clôture motivante
+}
+
+export type SynthesizeOneOnOneResult = {
+  brief: OneOnOneBrief
+  usage: { input_tokens: number; output_tokens: number }
+}
+
+const ONE_ON_ONE_TOOL: Anthropic.Tool = {
+  name: 'submit_one_on_one',
+  description:
+    'Soumet le briefing de 1:1 (ce qui progresse, UN axe à travailler, un encouragement). Tu DOIS appeler ce tool une seule fois.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      wins: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 3,
+        description:
+          "2 à 3 points POSITIFS concrets et factuels sur la période (progrès, points forts observés). Toujours formulés de façon valorisante.",
+        items: { type: 'string' },
+      },
+      focus: {
+        type: 'object',
+        description:
+          "UN SEUL axe de progression (jamais plusieurs). Formulé comme une opportunité, pas un reproche.",
+        properties: {
+          axis_label: {
+            type: 'string',
+            description:
+              "L'axe à travailler ensemble, court et bienveillant (ex. « Cadrer la prochaine étape »).",
+          },
+          why: {
+            type: 'string',
+            description:
+              "En une phrase, ce qui est observé sur la période, factuel et sans dureté (ex. « la date de prochaine étape reste souvent floue »).",
+          },
+          suggestion: {
+            type: 'string',
+            description:
+              "Une piste concrète à tester lors du prochain appel, formulée comme une invitation (ex. « proposer 2 créneaux précis en fin d'échange »).",
+          },
+        },
+        required: ['axis_label', 'why', 'suggestion'],
+      },
+      encouragement: {
+        type: 'string',
+        description:
+          "Une phrase de clôture motivante et sincère, adressée au manager pour ouvrir le dialogue avec le commercial. Jamais mièvre, jamais condescendante.",
+      },
+    },
+    required: ['wins', 'focus', 'encouragement'],
+  },
+}
+
+function buildOneOnOneMessage(input: OneOnOneInput, aiProfile: AiProfileData | null): string {
+  const contextBlock = buildContextBlock(aiProfile)
+  const prefix = contextBlock ? `${contextBlock}\n\n` : ''
+
+  const trend =
+    input.avgValidated != null && input.prevAvgValidated != null
+      ? `Dimensions validées (moy. /5) : ${input.avgValidated} cette période vs ${input.prevAvgValidated} la période précédente.`
+      : input.avgValidated != null
+        ? `Dimensions validées (moy. /5) : ${input.avgValidated}.`
+        : 'Pas encore de moyenne de dimensions exploitable.'
+
+  const dimsBlock =
+    input.dimensions.length > 0
+      ? input.dimensions
+          .map(
+            (d) =>
+              `  - ${d.label} : manquée ${Math.round(d.missedRate * 100)}% des appels, partielle ${Math.round(d.partialRate * 100)}%`,
+          )
+          .join('\n')
+      : '  (pas de détail par dimension)'
+
+  const coachingBlock =
+    input.recurringCoaching.length > 0
+      ? input.recurringCoaching.map((c) => `  - ${c}`).join('\n')
+      : '  (aucun thème récurrent)'
+
+  const continuity = input.previousFocusAxis
+    ? `\n\nAu dernier 1:1, l'axe travaillé était : « ${input.previousFocusAxis} ». Si les données montrent un progrès dessus, célèbre-le explicitement dans les "wins".`
+    : ''
+
+  return `${prefix}Tu aides un MANAGER commercial à préparer un entretien individuel (1:1) BIENVEILLANT avec ${input.repName}, sur la période « ${input.periodLabel} ».
+
+RÈGLES DE TON (impératives) :
+- Tu t'adresses au manager pour l'aider à motiver son commercial. L'objectif est la CONFIANCE et la PROGRESSION, jamais le flicage ni la sanction.
+- Ouvre TOUJOURS par ce qui progresse (les "wins").
+- Ne retiens QU'UN SEUL axe à travailler. Pas de liste de reproches.
+- Reformule toute faiblesse en opportunité de progression. Vocabulaire « à travailler ensemble », « piste à tester ». Jamais de ton dur, jamais de comparaison/classement avec d'autres commerciaux.
+- Reste factuel : appuie-toi sur les données ci-dessous, n'invente rien.
+
+Données de la période (${input.callCount} appel(s) analysé(s)) :
+${trend}
+Par dimension :
+${dimsBlock}
+Thèmes de coaching revenus le plus souvent :
+${coachingBlock}${continuity}
+
+Rédige le briefing puis appelle le tool \`submit_one_on_one\`.`
+}
+
+/**
+ * Synthétise un briefing de 1:1 bienveillant à partir d'agrégats déjà calculés
+ * (aucune transcription envoyée → coût borné). Renvoie le brief + l'usage tokens.
+ */
+export async function synthesizeOneOnOne(
+  input: OneOnOneInput,
+  aiProfile?: AiProfileData | null,
+): Promise<SynthesizeOneOnOneResult> {
+  const client = getClient()
+  const message = buildOneOnOneMessage(input, aiProfile ?? null)
+
+  const response = await client.messages.create({
+    model: ANALYSIS_MODEL,
+    max_tokens: 1500,
+    temperature: 0.3, // un peu de chaleur dans la formulation, sans dériver
+    tools: [ONE_ON_ONE_TOOL],
+    tool_choice: { type: 'tool', name: 'submit_one_on_one' },
+    messages: [{ role: 'user', content: message }],
+  })
+
+  const toolUseBlock = response.content.find(
+    (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
+  )
+  if (!toolUseBlock || toolUseBlock.name !== 'submit_one_on_one') {
+    throw new Error(
+      `Claude n'a pas appelé submit_one_on_one (stop_reason=${response.stop_reason})`,
+    )
+  }
+
+  const raw = toolUseBlock.input as {
+    wins?: unknown
+    focus?: { axis_label?: unknown; why?: unknown; suggestion?: unknown }
+    encouragement?: unknown
+  }
+
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+  const wins = Array.isArray(raw.wins)
+    ? raw.wins.map(str).filter((w) => w.length > 0).slice(0, 3)
+    : []
+
+  const brief: OneOnOneBrief = {
+    wins,
+    focus: {
+      axis_label: str(raw.focus?.axis_label),
+      why: str(raw.focus?.why),
+      suggestion: str(raw.focus?.suggestion),
+    },
+    encouragement: str(raw.encouragement),
+  }
+
+  return {
+    brief,
+    usage: {
+      input_tokens: response.usage.input_tokens,
+      output_tokens: response.usage.output_tokens,
+    },
+  }
+}

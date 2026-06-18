@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Briefcase,
+  CalendarClock,
   LayoutDashboard,
+  ListTodo,
   LogOut,
   Menu,
   Phone,
@@ -53,12 +55,22 @@ const navGroups: NavGroup[] = [
   {
     title: "Coacher",
     roles: ["owner", "manager"],
-    items: [{ href: "/dashboard/team", label: "Mon équipe", icon: Users }],
+    items: [
+      { href: "/dashboard/team", label: "Mon équipe", icon: Users },
+      {
+        href: "/dashboard/one-on-ones",
+        label: "Préparer un 1:1",
+        icon: CalendarClock,
+      },
+    ],
   },
   {
     title: "Travailler",
     roles: ["owner", "manager", "sales"],
-    items: [{ href: "/dashboard/calls", label: "Mes appels", icon: Phone }],
+    items: [
+      { href: "/dashboard/todo", label: "À faire", icon: ListTodo },
+      { href: "/dashboard/calls", label: "Mes appels", icon: Phone },
+    ],
   },
 ];
 

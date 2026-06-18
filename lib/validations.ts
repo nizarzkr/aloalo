@@ -271,3 +271,33 @@ export const LoginSchema = z.object({
 })
 
 export type LoginInput = z.infer<typeof LoginSchema>
+
+// --- 1:1 / coaching (J35) ----------------------------------------------------
+// Génération d'un briefing de 1:1 : commercial ciblé + période d'analyse.
+export const OneOnOneGenerateSchema = z.object({
+  repId: z.string().uuid('commercial invalide'),
+  periodType: z.enum(['week', 'two_weeks', 'month', 'quarter', 'year'], {
+    message: 'période invalide',
+  }),
+})
+
+export type OneOnOneGenerateInput = z.infer<typeof OneOnOneGenerateSchema>
+
+// Notes libres du manager attachées à un 1:1.
+export const OneOnOneNotesSchema = z.object({
+  sessionId: z.string().uuid('session invalide'),
+  notes: z.string().max(4000, 'notes trop longues (4000 caractères max)'),
+})
+
+export type OneOnOneNotesInput = z.infer<typeof OneOnOneNotesSchema>
+
+// --- « À faire » (J37) -------------------------------------------------------
+// Cocher/décocher une tâche suggérée. La tâche est identifiée par (callId, titre)
+// — les suggested_tasks n'ont pas d'id propre.
+export const TodoToggleSchema = z.object({
+  callId: z.string().uuid('appel invalide'),
+  title: z.string().trim().min(1, 'titre requis').max(300, 'titre trop long'),
+  done: z.boolean(),
+})
+
+export type TodoToggleInput = z.infer<typeof TodoToggleSchema>
