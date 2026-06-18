@@ -9,9 +9,11 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { hasSecret } from "@/lib/crypto/org-secrets";
 import { getOrgPipelines } from "@/lib/hubspot-pipelines";
 import { CopyButton } from "@/components/dashboard/copy-button";
+import { GoogleConnection } from "@/components/dashboard/google-connection";
 import { HubspotConnection } from "@/components/dashboard/hubspot-connection";
 import { HubspotSettingsForm } from "@/components/dashboard/hubspot-settings-form";
 import { PipelineRefreshButton } from "@/components/dashboard/pipeline-refresh-button";
+import { listRecentMeetTranscripts } from "@/lib/google-meet";
 import { RingoverKeyForm } from "@/components/dashboard/ringover-key-form";
 import { SectionHeading } from "@/components/dashboard/section-heading";
 import { TunnelPreview } from "@/components/dashboard/tunnel-preview";
@@ -30,9 +32,9 @@ export const dynamic = "force-dynamic";
 export default async function IntegrationsSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ hubspot?: string }>;
+  searchParams: Promise<{ hubspot?: string; google?: string }>;
 }) {
-  const { hubspot: hubspotStatus } = await searchParams;
+  const { hubspot: hubspotStatus, google: googleStatus } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -59,7 +61,7 @@ export default async function IntegrationsSettingsPage({
     ? await admin
         .from("organizations")
         .select(
-          "ringover_api_key, hubspot_token, hubspot_refresh_token, hubspot_portal_id",
+          "ringover_api_key, hubspot_token, hubspot_refresh_token, hubspot_portal_id, google_refresh_token, google_email",
         )
         .eq("id", profile.organization_id)
         .maybeSingle()
@@ -75,6 +77,19 @@ export default async function IntegrationsSettingsPage({
   const hasHubspotLegacy = hasSecret(org?.hubspot_token);
   const hasHubspotToken = hasHubspotOAuth || hasHubspotLegacy;
   const hubspotPortalId = org?.hubspot_portal_id ?? "";
+
+  // Google Meet (J42) : connecté = présence d'un refresh token chiffré.
+  const hasGoogleConnection = hasSecret(org?.google_refresh_token);
+  const googleEmail = (org?.google_email as string | null) ?? null;
+
+  // Preuve « enregistrements récupérables » (livrable J42) : on liste les
+  // réunions Meet récentes + leur transcription. Best-effort (try/catch dans la
+  // lib), uniquement si owner connecté — vide si pas de Workspace / pas de Meet.
+  const meetConferences =
+    isOwner && profile?.organization_id && hasGoogleConnection
+      ? await listRecentMeetTranscripts(profile.organization_id, 10)
+      : [];
+  const meetWithTranscript = meetConferences.filter((c) => c.hasTranscript).length;
 
   // Carte du tunnel HubSpot (J27) — affichée si HubSpot est connecté.
   const { pipelines, syncedAt } =
@@ -261,6 +276,102 @@ export default async function IntegrationsSettingsPage({
                   ) : (
                     <TunnelPreview pipelines={pipelines} syncedAt={syncedAt} />
                   )}
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {/* --- Google Meet (owner uniquement — touche un secret) ------ */}
+        {isOwner ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Google Meet</CardTitle>
+                  <CardDescription>
+                    Connectez votre compte Google Workspace pour analyser vos
+                    visioconférences. Aloalo lit la transcription native de Meet
+                    (vrais noms des participants, sans téléchargement).
+                  </CardDescription>
+                </div>
+                {hasGoogleConnection ? (
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  >
+                    Connecté
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  >
+                    À configurer
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Bandeau de retour du flux OAuth (?google=...) */}
+              {googleStatus === "connected" ? (
+                <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+                  Google Meet connecté.
+                </div>
+              ) : googleStatus === "denied" ? (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+                  Autorisation refusée côté Google. La connexion n&apos;a pas été
+                  établie.
+                </div>
+              ) : googleStatus === "error" ? (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                  La connexion Google a échoué. Réessayez ; si le problème
+                  persiste, contactez le support.
+                </div>
+              ) : null}
+
+              <GoogleConnection
+                connected={hasGoogleConnection}
+                canEdit={isOwner}
+                email={googleEmail}
+              />
+
+              {/* Preuve de récupération (livrable J42) : réunions Meet récentes. */}
+              {hasGoogleConnection ? (
+                <div className="space-y-3 border-t border-border pt-6">
+                  <div>
+                    <h3 className="text-sm font-medium">Réunions récentes</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {meetConferences.length === 0
+                        ? "Aucune réunion Meet récente détectée. Vérifiez que la transcription était activée et que vous êtes l'organisateur (compte Workspace requis)."
+                        : `${meetConferences.length} réunion(s) récente(s), dont ${meetWithTranscript} avec transcription récupérable.`}
+                    </p>
+                  </div>
+                  {meetConferences.length > 0 ? (
+                    <ul className="space-y-1 text-xs">
+                      {meetConferences.slice(0, 5).map((c) => (
+                        <li
+                          key={c.conferenceRecordName}
+                          className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/40 px-3 py-2"
+                        >
+                          <span className="text-foreground">
+                            {c.startTime
+                              ? new Date(c.startTime).toLocaleString("fr-FR")
+                              : "Date inconnue"}
+                          </span>
+                          {c.hasTranscript ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                              Transcription dispo
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              Pas de transcription
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </div>
               ) : null}
             </CardContent>

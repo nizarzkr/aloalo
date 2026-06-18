@@ -21,6 +21,7 @@ import {
 } from "@/lib/exit-criteria";
 import { testHubspotConnection } from "@/lib/hubspot";
 import { getHubspotToken } from "@/lib/hubspot-oauth";
+import { clearGoogleOAuth } from "@/lib/google-oauth";
 import { syncOrgPipelines } from "@/lib/hubspot-pipelines";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -496,6 +497,39 @@ export async function disconnectHubspot(): Promise<UpdateOrgResult> {
   revalidatePath("/dashboard/settings/integrations");
   revalidatePath("/onboarding");
   return { ok: true, message: "HubSpot déconnecté." };
+}
+
+// ============================================================================
+// disconnectGoogle — déconnecte le compte Google Meet (J42)
+// ============================================================================
+export async function disconnectGoogle(): Promise<UpdateOrgResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Session expirée. Reconnectez-vous." };
+
+  const admin = getAdminClient();
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("organization_id, role")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.organization_id) return { ok: false, error: "Profil introuvable." };
+  if (profile.role !== "owner") {
+    return { ok: false, error: "Seul le propriétaire peut déconnecter Google." };
+  }
+
+  try {
+    await clearGoogleOAuth(profile.organization_id);
+  } catch {
+    return { ok: false, error: "Impossible de déconnecter Google." };
+  }
+
+  revalidatePath("/dashboard/settings/integrations");
+  revalidatePath("/onboarding");
+  return { ok: true, message: "Google Meet déconnecté." };
 }
 
 // ============================================================================
