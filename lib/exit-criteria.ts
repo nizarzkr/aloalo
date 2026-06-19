@@ -24,7 +24,8 @@ import {
   proposeExitCriteria,
   type ExitCriteriaStageInput,
 } from '@/lib/claude'
-import { getRecentWonDeals, type HubspotPipeline } from '@/lib/hubspot'
+import { getCrmAdapter } from '@/lib/crm'
+import type { CrmPipeline } from '@/lib/crm/types'
 import type { AiProfileData } from '@/lib/validations'
 
 // Seuil du filet hybride : en dessous, on ne passe PAS les deals gagnés à l'IA
@@ -77,7 +78,7 @@ export async function getOrgExitCriteria(orgId: string): Promise<ExitCriteriaMap
 // Extrait les phases OUVERTES (≠ gagné/perdu) de tous les pipelines, à plat,
 // dans la forme attendue par le prompt (avec leur rang dans le pipeline).
 function openStagesFromPipelines(
-  pipelines: HubspotPipeline[],
+  pipelines: CrmPipeline[],
 ): ExitCriteriaStageInput[] {
   const out: ExitCriteriaStageInput[] = []
   for (const p of pipelines) {
@@ -127,7 +128,7 @@ export async function generateOrgExitCriteria(
     .eq('id', orgId)
     .maybeSingle()
 
-  const pipelines = (org?.hubspot_pipelines as HubspotPipeline[] | null) ?? []
+  const pipelines = (org?.hubspot_pipelines as CrmPipeline[] | null) ?? []
   if (pipelines.length === 0) {
     return {
       ok: false,
@@ -159,7 +160,7 @@ export async function generateOrgExitCriteria(
   // Enrichissement optionnel (filet hybride).
   let wonDeals = null
   if (token) {
-    const deals = await getRecentWonDeals(token)
+    const deals = await (await getCrmAdapter(orgId)).getRecentWonDeals()
     if (deals.length >= WON_DEALS_MIN_FOR_CONTEXT) {
       wonDeals = deals.map((d) => ({ amount: d.amount, closedate: d.closedate }))
     }

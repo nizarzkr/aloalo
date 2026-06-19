@@ -24,6 +24,7 @@ import { testHubspotConnection } from "@/lib/hubspot";
 import { getHubspotToken } from "@/lib/hubspot-oauth";
 import { clearGoogleOAuth } from "@/lib/google-oauth";
 import { syncOrgPipelines } from "@/lib/hubspot-pipelines";
+import { getCrmAdapter } from "@/lib/crm";
 import { createClient } from "@/lib/supabase/server";
 import {
   AiProfileSchema,
@@ -437,11 +438,13 @@ export async function refreshHubspotPipelines(): Promise<PipelineRefreshResult> 
     return { ok: false, error: "Seul le propriétaire peut rafraîchir le tunnel." };
   }
 
-  // OAuth (rafraîchi auto) avec repli sur le legacy hubspot_token (J38).
-  const token = await getHubspotToken(profile.organization_id);
-  if (!token) return { ok: false, error: "HubSpot n'est pas connecté." };
+  // Adaptateur CRM (J45) — OAuth (rafraîchi auto) avec repli legacy (J38).
+  const crm = await getCrmAdapter(profile.organization_id);
+  if (!(await crm.isConnected())) {
+    return { ok: false, error: "HubSpot n'est pas connecté." };
+  }
 
-  const result = await syncOrgPipelines(profile.organization_id, token);
+  const result = await crm.syncPipelines();
   revalidatePath("/dashboard/settings/integrations");
 
   if (!result.ok) {

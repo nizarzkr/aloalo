@@ -14,7 +14,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Activity, ArrowLeft, PhoneCall, TrendingDown, TrendingUp } from "lucide-react";
 
-import { getHubspotToken } from "@/lib/hubspot-oauth";
+import { getCrmAdapter } from "@/lib/crm";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,14 +27,12 @@ import {
 } from "@/lib/metrics/momentum";
 import type { ConversationMetrics } from "@/lib/metrics/conversation";
 import type { BehavioralSignals } from "@/lib/claude";
-import { getContactEmailSignals } from "@/lib/hubspot";
 import { buildAlertForDeal } from "@/lib/metrics/coaching-alert";
 import {
   hasPushedCoachingAction,
   getPushedHygieneActions,
 } from "@/lib/deals/pushed-actions";
 import { getDealHygiene } from "@/lib/hygiene/compute";
-import { getOrgPipelines } from "@/lib/hubspot-pipelines";
 import { buildDealPhaseContext } from "@/lib/metrics/phase-context";
 import {
   computeForecastConfidence,
@@ -178,13 +176,12 @@ export default async function DealMomentumPage({
   // Signaux CRM (off-call) — uniquement si HubSpot connecté + contact connu.
   // Dégrade silencieusement vers null (cas dominant sur données simulées).
   let crm: DealCrmSignals | null = null;
+  // Adaptateur CRM de l'org (J45) — résout son jeton paresseusement (OAuth
+  // rafraîchi auto + repli legacy), jamais lisible côté RLS (issue #5).
+  const crmAdapter = await getCrmAdapter(orgFilter);
   if (hubspotContactId) {
-    // OAuth (rafraîchi auto) avec repli sur le legacy hubspot_token (J38) —
-    // résolution serveur, jamais lisible côté RLS (issue #5).
-    const token = await getHubspotToken(orgFilter);
-    if (token) {
-      crm = await getContactEmailSignals(hubspotContactId, token);
-    }
+    // Dégrade silencieusement vers null si CRM non connecté ou contact sans email.
+    crm = await crmAdapter.getContactEmailSignals(hubspotContactId);
   }
 
   const momentum = computeDealMomentum(points, crm);
@@ -195,7 +192,7 @@ export default async function DealMomentumPage({
   const [hygieneReport, pushedHygieneKeys, { pipelines }] = await Promise.all([
     getDealHygiene(orgFilter, decoded),
     getPushedHygieneActions(orgFilter),
-    getOrgPipelines(orgFilter),
+    crmAdapter.getStoredPipelines(),
   ]);
 
   // Phase courante = dernière valeur non nulle + jours depuis le dernier appel.

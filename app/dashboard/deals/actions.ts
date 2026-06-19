@@ -22,15 +22,9 @@ import { revalidatePath } from 'next/cache'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 import { createClient } from '@/lib/supabase/server'
-import { getHubspotToken } from '@/lib/hubspot-oauth'
-import {
-  createTask,
-  getMostRecentDealForContact,
-  resolveContactContext,
-  resolveDueDateMs,
-  sanitizeForHubspot,
-  type HubspotTarget,
-} from '@/lib/hubspot'
+import { getCrmAdapter } from '@/lib/crm'
+import type { CrmAdapter, CrmTarget } from '@/lib/crm/types'
+import { resolveDueDateMs, sanitizeForHubspot } from '@/lib/hubspot'
 import { aggregateOrgDeals } from '@/lib/deals/aggregate'
 import type { CoachingAlert } from '@/lib/metrics/coaching-alert'
 import { computeDealHygiene } from '@/lib/hygiene/compute'
@@ -93,8 +87,8 @@ async function resolveTarget(
   admin: ReturnType<typeof adminClient>,
   orgId: string,
   groupKey: string,
-  token: string,
-): Promise<HubspotTarget | null> {
+  crm: CrmAdapter,
+): Promise<CrmTarget | null> {
   if (groupKey.startsWith('deal:')) {
     const id = groupKey.slice('deal:'.length)
     if (id) return { type: 'deal', id }
@@ -123,14 +117,14 @@ async function resolveTarget(
   const storedContactId = (rows ?? []).find((r) => r.hubspot_contact_id)
     ?.hubspot_contact_id as string | undefined
   if (storedContactId) {
-    const deal = await getMostRecentDealForContact(storedContactId, token)
+    const deal = await crm.getMostRecentDealForContact(storedContactId)
     if (deal) return { type: 'deal', id: deal.id }
     return { type: 'contact', id: storedContactId }
   }
 
   // 4. Dernier recours : résolution complète par le numéro (deal d'abord).
   if (phone) {
-    const ctx = await resolveContactContext(phone, token)
+    const ctx = await crm.resolveContactContext(phone)
     if (ctx.deal) return { type: 'deal', id: ctx.deal.id }
     if (ctx.contact) return { type: 'contact', id: ctx.contact.id }
   }
@@ -172,9 +166,9 @@ export async function pushCoachingAction(
     .maybeSingle()
   if (existing) return { ok: true, already: true }
 
-  // 3. Token HubSpot — OAuth (rafraîchi auto) avec repli legacy (J38).
-  const token = await getHubspotToken(orgId)
-  if (!token) return { ok: false, reason: 'not_connected' }
+  // 3. Adaptateur CRM — OAuth (rafraîchi auto) avec repli legacy (J38).
+  const crm = await getCrmAdapter(orgId)
+  if (!(await crm.isConnected())) return { ok: false, reason: 'not_connected' }
 
   // 4. Recalcule l'alerte côté serveur (source de vérité — jamais le client).
   const deals = await aggregateOrgDeals(orgId)
@@ -182,20 +176,19 @@ export async function pushCoachingAction(
   const alert = deal?.alert
   if (!alert) return { ok: false, reason: 'no_alert' }
 
-  // 5. Cible HubSpot (deal en priorité, sinon contact).
-  const target = await resolveTarget(admin, orgId, groupKey, token)
+  // 5. Cible CRM (deal en priorité, sinon contact).
+  const target = await resolveTarget(admin, orgId, groupKey, crm)
   if (!target) return { ok: false, reason: 'no_target' }
 
-  // 6. Création de la tâche dans HubSpot (réutilise lib/hubspot.createTask).
+  // 6. Création de la tâche dans le CRM (via l'adaptateur).
   const title = sanitizeForHubspot(
     `Aloalo — Relance : ${alert.title}`,
     250,
   )
-  const taskId = await createTask(
+  const taskId = await crm.createTask(
     target,
     title,
     resolveDueDateMs(null), // J+2 par défaut (relance de suivi).
-    token,
     buildTaskBody(alert),
   )
   if (!taskId) return { ok: false, reason: 'hubspot_error' }
@@ -295,9 +288,9 @@ export async function pushHygieneFix(
     .maybeSingle()
   if (existing) return { ok: true, already: true }
 
-  // 3. Token HubSpot — OAuth (rafraîchi auto) avec repli legacy (J38).
-  const token = await getHubspotToken(orgId)
-  if (!token) return { ok: false, reason: 'not_connected' }
+  // 3. Adaptateur CRM — OAuth (rafraîchi auto) avec repli legacy (J38).
+  const crm = await getCrmAdapter(orgId)
+  if (!(await crm.isConnected())) return { ok: false, reason: 'not_connected' }
 
   // 4. Recalcule l'hygiène côté serveur (source de vérité — jamais le client)
   //    et retrouve l'écart par son type. Le cache court-circuite (pas de coût IA
@@ -306,17 +299,16 @@ export async function pushHygieneFix(
   const gap = report?.gaps.find((g) => g.type === gapType)
   if (!gap) return { ok: false, reason: 'no_gap' }
 
-  // 5. Cible HubSpot (deal en priorité, sinon contact) — réutilise resolveTarget.
-  const target = await resolveTarget(admin, orgId, groupKey, token)
+  // 5. Cible CRM (deal en priorité, sinon contact) — réutilise resolveTarget.
+  const target = await resolveTarget(admin, orgId, groupKey, crm)
   if (!target) return { ok: false, reason: 'no_target' }
 
-  // 6. Tâche de correction dans HubSpot.
+  // 6. Tâche de correction dans le CRM.
   const title = sanitizeForHubspot(`Aloalo — Hygiène : ${gap.title}`, 250)
-  const taskId = await createTask(
+  const taskId = await crm.createTask(
     target,
     title,
     resolveDueDateMs(null), // J+2 par défaut.
-    token,
     buildHygieneTaskBody(gap),
   )
   if (!taskId) return { ok: false, reason: 'hubspot_error' }

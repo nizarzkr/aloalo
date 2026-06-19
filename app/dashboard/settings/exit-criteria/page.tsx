@@ -20,7 +20,7 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { getOrgExitCriteria } from "@/lib/exit-criteria";
-import { getOrgPipelines } from "@/lib/hubspot-pipelines";
+import { getCrmAdapter } from "@/lib/crm";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -69,7 +69,7 @@ export default async function ExitCriteriaSettingsPage() {
 
   // Carte du tunnel (J27) + critères persistés (J28).
   const { pipelines } = profile?.organization_id
-    ? await getOrgPipelines(profile.organization_id)
+    ? await (await getCrmAdapter(profile.organization_id)).getStoredPipelines()
     : { pipelines: [] };
   const criteriaMap = profile?.organization_id
     ? await getOrgExitCriteria(profile.organization_id)

@@ -31,7 +31,7 @@ import {
 } from '@/lib/metrics/forecast-confidence'
 import type { ConversationMetrics } from '@/lib/metrics/conversation'
 import type { BehavioralSignals } from '@/lib/claude'
-import { getOrgPipelines } from '@/lib/hubspot-pipelines'
+import { getCrmAdapter } from '@/lib/crm'
 import { getOrgHygiene } from '@/lib/hygiene/store'
 import type { HygieneGap } from '@/lib/hygiene/types'
 
@@ -143,6 +143,7 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
 
   // Appels analysés + carte du tunnel (J27) + cache d'hygiène (J30) en parallèle.
   // Le tunnel et l'hygiène nourrissent le contexte phase de l'alerte (J32).
+  const crm = await getCrmAdapter(orgId)
   const [{ data: callsData }, { pipelines }, hygieneReports] =
     await Promise.all([
       admin
@@ -154,7 +155,7 @@ export async function aggregateOrgDeals(orgId: string): Promise<DealSummary[]> {
         .eq('organization_id', orgId)
         .eq('status', 'analyzed')
         .order('created_at', { ascending: true }),
-      getOrgPipelines(orgId),
+      crm.getStoredPipelines(),
       getOrgHygiene(orgId),
     ])
 

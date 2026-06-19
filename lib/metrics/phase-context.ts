@@ -13,7 +13,7 @@
 // ici → testable sans mock.
 // ============================================================================
 
-import type { HubspotPipeline } from '@/lib/hubspot'
+import type { CrmPipeline } from '@/lib/crm/types'
 import type { HygieneGap } from '@/lib/hygiene/types'
 
 export type StageInfo = {
@@ -44,7 +44,7 @@ export type DealPhaseContext = {
  * Renvoie null si le stage n'est reconnu dans aucun pipeline.
  */
 export function findStageInfo(
-  pipelines: HubspotPipeline[],
+  pipelines: CrmPipeline[],
   stageId: string | null,
 ): StageInfo | null {
   if (!stageId) return null
@@ -73,7 +73,7 @@ export function findStageInfo(
 
 export type BuildPhaseContextInput = {
   stageId: string | null
-  pipelines: HubspotPipeline[]
+  pipelines: CrmPipeline[]
   // Écarts d'hygiène déjà calculés pour ce deal (cache J30) — peut être vide.
   gaps: HygieneGap[]
   daysInactive: number

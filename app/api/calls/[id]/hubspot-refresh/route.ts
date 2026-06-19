@@ -16,7 +16,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { enrichCallFromHubspot } from '@/lib/hubspot-sync'
-import { getHubspotToken } from '@/lib/hubspot-oauth'
+import { getCrmAdapter } from '@/lib/crm'
 
 function getAdminClient() {
   return createAdminClient(
@@ -65,9 +65,9 @@ export async function POST(
     return NextResponse.json({ error: 'not_found' }, { status: 404 })
   }
 
-  // 4. Token HubSpot de l'org — OAuth (rafraîchi auto) avec repli legacy (J38).
-  const token = await getHubspotToken(orgId)
-  if (!token) {
+  // 4. Adaptateur CRM de l'org — OAuth (rafraîchi auto) avec repli legacy (J38).
+  const crm = await getCrmAdapter(orgId)
+  if (!(await crm.isConnected())) {
     return NextResponse.json({ error: 'hubspot_not_connected' }, { status: 400 })
   }
 
@@ -77,7 +77,7 @@ export async function POST(
   }
 
   // 5. Enrichissement (écrit les colonnes d'affichage côté serveur).
-  const ctx = await enrichCallFromHubspot(admin, callId, phone, token)
+  const ctx = await enrichCallFromHubspot(admin, callId, phone, crm)
 
   // Invalide le cache serveur des vues qui affichent ces infos — sinon le rendu
   // serveur suivant resservirait l'ancien affichage (cf. router.refresh seul ne

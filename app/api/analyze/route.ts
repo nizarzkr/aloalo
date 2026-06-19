@@ -26,16 +26,11 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { analyzeCall, estimateCostEur, ANALYSIS_MODEL } from '@/lib/claude'
 import type { CallAnalysis } from '@/lib/claude'
-import {
-  createNote,
-  createTask,
-  sanitizeForHubspot,
-  resolveDueDateMs,
-} from '@/lib/hubspot'
-import type { HubspotTarget } from '@/lib/hubspot'
+import { sanitizeForHubspot, resolveDueDateMs } from '@/lib/hubspot'
+import { getCrmAdapter } from '@/lib/crm'
+import type { CrmTarget } from '@/lib/crm/types'
 import { enrichCallFromHubspot } from '@/lib/hubspot-sync'
 import { computeDealHygiene } from '@/lib/hygiene/compute'
-import { getHubspotToken } from '@/lib/hubspot-oauth'
 import type { TranscriptSegment } from '@/lib/assemblyai'
 import { computeConversationMetrics } from '@/lib/metrics/conversation'
 import { checkUsageLimit, resolveEffectivePlan } from '@/lib/plans'
@@ -347,8 +342,10 @@ export async function POST(req: NextRequest) {
   //    dégradé, le pipeline d'analyse reste OK quoi qu'il arrive.
   const contactName = (call.contact_name as string | null) ?? null
   const phone = (call.callee_number as string | null) ?? null
-  // OAuth (rafraîchi auto) avec repli sur le legacy hubspot_token (J38).
-  const hubspotToken = await getHubspotToken(call.organization_id)
+  // Adaptateur CRM (J45) — résout son jeton paresseusement (OAuth rafraîchi auto
+  // + repli legacy). `connected` mémoïse la résolution pour les écritures qui suivent.
+  const crm = await getCrmAdapter(call.organization_id)
+  const crmConnected = await crm.isConnected()
 
   after(async () => {
     // Forme du jsonb : cf. migrations 0010 / 0011.
@@ -358,17 +355,12 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      // Push HubSpot — uniquement si org connectée + numéro à matcher.
-      if (hubspotToken && phone) {
+      // Push CRM — uniquement si org connectée + numéro à matcher.
+      if (crmConnected && phone) {
         // Résout contact + entreprise + deal le plus récent ET enrichit les
         // colonnes d'affichage de l'appel (nom/entreprise/deal visibles dans
         // Aloalo). Réutilise le contexte renvoyé pour cibler la synchro.
-        const ctx = await enrichCallFromHubspot(
-          supabase,
-          callId,
-          phone,
-          hubspotToken,
-        )
+        const ctx = await enrichCallFromHubspot(supabase, callId, phone, crm)
         const contact = ctx.contact
 
         if (!contact) {
@@ -379,7 +371,7 @@ export async function POST(req: NextRequest) {
 
           // Cible de la note + des tâches : le deal le plus récent en priorité
           // (l'affaire en cours), sinon repli sur le contact (décision J18bis).
-          const target: HubspotTarget = ctx.deal
+          const target: CrmTarget = ctx.deal
             ? { type: 'deal', id: ctx.deal.id }
             : { type: 'contact', id: contact.id }
           sync.target = target.type
@@ -392,11 +384,10 @@ export async function POST(req: NextRequest) {
           // Note de synthèse (inclut désormais les points à mettre dans le mail).
           // Échec non bloquant : on tente quand même les tâches ensuite.
           try {
-            const noteId = await createNote(
+            const noteId = await crm.createNote(
               target,
               // Assainie + cap dur caractères avant écriture CRM (issue #28).
               sanitizeForHubspot(buildNoteSummary(analysis), 4000, true),
-              hubspotToken,
             )
             if (noteId) sync.note_id = noteId
             else sync.note_error = 'createNote a renvoyé null (voir logs)'
@@ -428,11 +419,10 @@ export async function POST(req: NextRequest) {
             try {
               const dueDateMs = resolveDueDateMs(t.due_date)
               // Texte IA assaini + cappé avant écriture dans HubSpot (issue #28).
-              const taskId = await createTask(
+              const taskId = await crm.createTask(
                 target,
                 sanitizeForHubspot(t.title, 250),
                 dueDateMs,
-                hubspotToken,
                 sanitizeForHubspot(t.reason, 1000, true),
               )
               createdTasks.push({

@@ -20,7 +20,7 @@ import { StepTelephony } from "@/components/onboarding/step-telephony";
 import { type EditorPipeline } from "@/components/dashboard/exit-criteria-editor";
 import { hasSecret } from "@/lib/crypto/org-secrets";
 import { getOrgExitCriteria } from "@/lib/exit-criteria";
-import { getOrgPipelines } from "@/lib/hubspot-pipelines";
+import { getCrmAdapter } from "@/lib/crm";
 import {
   getOnboardingState,
   ONBOARDING_STEPS,
@@ -66,6 +66,7 @@ export default async function OnboardingPage({
   const orgId = profile.organization_id;
 
   // Données nécessaires aux étapes (lues en parallèle).
+  const crm = await getCrmAdapter(orgId);
   const [state, org, { pipelines, syncedAt }, criteriaMap] = await Promise.all([
     getOnboardingState(orgId),
     admin
@@ -74,7 +75,7 @@ export default async function OnboardingPage({
       .eq("id", orgId)
       .maybeSingle()
       .then((r) => r.data),
-    getOrgPipelines(orgId),
+    crm.getStoredPipelines(),
     getOrgExitCriteria(orgId),
   ]);
 

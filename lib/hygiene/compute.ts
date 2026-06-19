@@ -24,7 +24,7 @@ import {
 } from '@/lib/claude'
 import { closedStatusFromStage, DORMANT_AFTER_MS } from '@/lib/deals/aggregate'
 import { getOrgExitCriteria, type ExitCriterion } from '@/lib/exit-criteria'
-import { getOrgPipelines } from '@/lib/hubspot-pipelines'
+import { getCrmAdapter } from '@/lib/crm'
 import {
   deriveDeterministicGaps,
   gapsFromAiEval,
@@ -123,8 +123,9 @@ export async function computeDealHygiene(
   const hasDealId = groupKey.startsWith('deal:') || calls.some((c) => c.deal_id)
 
   // 2. Carte du tunnel + critères de la phase courante.
+  const crm = await getCrmAdapter(orgId)
   const [{ pipelines }, criteriaMap] = await Promise.all([
-    getOrgPipelines(orgId),
+    crm.getStoredPipelines(),
     getOrgExitCriteria(orgId),
   ])
 

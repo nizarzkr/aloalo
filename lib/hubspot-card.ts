@@ -16,8 +16,7 @@
 // ============================================================================
 
 import { createClient } from '@supabase/supabase-js'
-import { getContact, getDealCalls } from '@/lib/hubspot'
-import { getHubspotToken } from '@/lib/hubspot-oauth'
+import { getCrmAdapter } from '@/lib/crm'
 import { summarizeDimensions } from '@/lib/metrics/dimensions-summary'
 
 // Données affichables de la carte (dernier appel analysé du contact).
@@ -122,17 +121,17 @@ export async function getContactCardData({
     .maybeSingle()
 
   if (!org) return { message: 'Portail non configuré dans Aloalo' }
-  // OAuth (rafraîchi auto) avec repli sur le legacy hubspot_token (J38).
-  const hubspotToken = await getHubspotToken(org.id)
-  if (!hubspotToken) {
+  // Adaptateur CRM (J45) : résout le jeton (OAuth rafraîchi auto + repli legacy).
+  const crm = await getCrmAdapter(org.id)
+  if (!(await crm.isConnected())) {
     return { message: 'Connexion HubSpot incomplète côté Aloalo' }
   }
   if (!contactId) {
     return { message: 'Ouvrez une fiche contact pour voir l’historique Aloalo' }
   }
 
-  // 2. Lire le téléphone du contact côté HubSpot (phone OU mobilephone).
-  const contact = await getContact(contactId, hubspotToken)
+  // 2. Lire le téléphone du contact côté CRM (phone OU mobilephone).
+  const contact = await crm.getContact(contactId)
   const phones = [contact?.phone, contact?.mobilephone].filter(
     (p): p is string => typeof p === 'string' && p.trim().length > 0,
   )
@@ -233,17 +232,17 @@ export async function getDealCardData({
     .maybeSingle()
 
   if (!org) return { message: 'Portail non configuré dans Aloalo' }
-  // OAuth (rafraîchi auto) avec repli sur le legacy hubspot_token (J38).
-  const hubspotToken = await getHubspotToken(org.id)
-  if (!hubspotToken) {
+  // Adaptateur CRM (J45) : résout le jeton (OAuth rafraîchi auto + repli legacy).
+  const crm = await getCrmAdapter(org.id)
+  if (!(await crm.isConnected())) {
     return { message: 'Connexion HubSpot incomplète côté Aloalo' }
   }
   if (!dealId) {
     return { message: 'Ouvrez une fiche deal pour voir le digest Aloalo' }
   }
 
-  // 2. Appels que HubSpot rattache à ce deal (numéro appelé + horodatage).
-  const dealCalls = await getDealCalls(dealId, hubspotToken)
+  // 2. Appels que le CRM rattache à ce deal (numéro appelé + horodatage).
+  const dealCalls = await crm.getDealCalls(dealId)
   const numbers = [
     ...new Set(
       dealCalls

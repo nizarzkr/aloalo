@@ -7,7 +7,7 @@ import { Cable } from "lucide-react";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 import { hasSecret } from "@/lib/crypto/org-secrets";
-import { getOrgPipelines } from "@/lib/hubspot-pipelines";
+import { getCrmAdapter } from "@/lib/crm";
 import { AircallTokenForm } from "@/components/dashboard/aircall-token-form";
 import { CopyButton } from "@/components/dashboard/copy-button";
 import { GoogleConnection } from "@/components/dashboard/google-connection";
@@ -97,7 +97,7 @@ export default async function IntegrationsSettingsPage({
   // Carte du tunnel HubSpot (J27) — affichée si HubSpot est connecté.
   const { pipelines, syncedAt } =
     isOwner && profile?.organization_id && hasHubspotToken
-      ? await getOrgPipelines(profile.organization_id)
+      ? await (await getCrmAdapter(profile.organization_id)).getStoredPipelines()
       : { pipelines: [], syncedAt: null };
 
   // URL du webhook Ringover — basée sur NEXT_PUBLIC_APP_URL (prod/preview).

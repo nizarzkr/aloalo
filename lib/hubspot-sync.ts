@@ -16,8 +16,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { resolveContactContext } from '@/lib/hubspot'
-import type { ContactContext } from '@/lib/hubspot'
+import type { CrmAdapter, CrmContactContext } from '@/lib/crm/types'
 
 // Compose un nom lisible « Prénom Nom » à partir du contact HubSpot, ou null
 // si aucun des deux champs n'est renseigné (on retombera sur le numéro).
@@ -35,19 +34,21 @@ function formatContactName(
  * hubspot_enriched_at). Renvoie le contexte résolu pour que l'appelant puisse
  * réutiliser le deal/contact (ex. cibler les notes/tâches) sans re-requêter.
  *
- * @returns ContactContext (contact/company/deal, chacun pouvant être null).
+ * @returns CrmContactContext (contact/company/deal, chacun pouvant être null).
  */
 export async function enrichCallFromHubspot(
   supabase: SupabaseClient,
   callId: string,
   phone: string | null,
-  token: string | null,
-): Promise<ContactContext> {
-  const empty: ContactContext = { contact: null, company: null, deal: null }
-  if (!phone || !token) return empty
+  crm: CrmAdapter,
+): Promise<CrmContactContext> {
+  const empty: CrmContactContext = { contact: null, company: null, deal: null }
+  if (!phone) return empty
 
-  const ctx = await resolveContactContext(phone, token)
-  if (!ctx.contact) return ctx // aucun contact pour ce numéro : on n'écrase rien
+  // resolveContactContext dégrade vers un contexte vide si le CRM n'est pas
+  // connecté ou si le numéro n'a pas de contact → on n'écrase alors rien.
+  const ctx = await crm.resolveContactContext(phone)
+  if (!ctx.contact) return ctx
 
   const contactName = formatContactName(
     ctx.contact.firstname,
