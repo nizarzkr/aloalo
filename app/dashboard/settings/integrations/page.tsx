@@ -13,6 +13,7 @@ import { CopyButton } from "@/components/dashboard/copy-button";
 import { GoogleConnection } from "@/components/dashboard/google-connection";
 import { HubspotConnection } from "@/components/dashboard/hubspot-connection";
 import { HubspotSettingsForm } from "@/components/dashboard/hubspot-settings-form";
+import { PipedriveConnection } from "@/components/dashboard/pipedrive-connection";
 import { PipelineRefreshButton } from "@/components/dashboard/pipeline-refresh-button";
 import { listRecentMeetTranscripts } from "@/lib/google-meet";
 import { RingoverKeyForm } from "@/components/dashboard/ringover-key-form";
@@ -33,9 +34,13 @@ export const dynamic = "force-dynamic";
 export default async function IntegrationsSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ hubspot?: string; google?: string }>;
+  searchParams: Promise<{ hubspot?: string; google?: string; pipedrive?: string }>;
 }) {
-  const { hubspot: hubspotStatus, google: googleStatus } = await searchParams;
+  const {
+    hubspot: hubspotStatus,
+    google: googleStatus,
+    pipedrive: pipedriveStatus,
+  } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -62,7 +67,7 @@ export default async function IntegrationsSettingsPage({
     ? await admin
         .from("organizations")
         .select(
-          "ringover_api_key, hubspot_token, hubspot_refresh_token, hubspot_portal_id, google_refresh_token, google_email, aircall_webhook_token_hash",
+          "ringover_api_key, hubspot_token, hubspot_refresh_token, hubspot_portal_id, google_refresh_token, google_email, aircall_webhook_token_hash, pipedrive_refresh_token",
         )
         .eq("id", profile.organization_id)
         .maybeSingle()
@@ -80,6 +85,8 @@ export default async function IntegrationsSettingsPage({
   const hasHubspotLegacy = hasSecret(org?.hubspot_token);
   const hasHubspotToken = hasHubspotOAuth || hasHubspotLegacy;
   const hubspotPortalId = org?.hubspot_portal_id ?? "";
+  // Pipedrive (J46) = présence d'un refresh token OAuth (chiffré).
+  const hasPipedriveToken = hasSecret(org?.pipedrive_refresh_token);
 
   // Google Meet (J42) : connecté = présence d'un refresh token chiffré.
   const hasGoogleConnection = hasSecret(org?.google_refresh_token);
@@ -339,6 +346,59 @@ export default async function IntegrationsSettingsPage({
                   )}
                 </div>
               ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {/* --- Pipedrive (J46) : 2ᵉ CRM via l'abstraction CrmAdapter -------- */}
+        {isOwner ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Pipedrive</CardTitle>
+                  <CardDescription>
+                    Alternative à HubSpot. Connectez Pipedrive pour enrichir les
+                    appels et y pousser notes et tâches. Une org pilote un seul CRM
+                    à la fois (le dernier connecté).
+                  </CardDescription>
+                </div>
+                {hasPipedriveToken ? (
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  >
+                    Connecté
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  >
+                    À configurer
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Bandeau de retour du flux OAuth (?pipedrive=...) */}
+              {pipedriveStatus === "connected" ? (
+                <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+                  Pipedrive connecté. Le tunnel a été synchronisé.
+                </div>
+              ) : pipedriveStatus === "denied" ? (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+                  Autorisation refusée côté Pipedrive. La connexion n&apos;a pas
+                  été établie.
+                </div>
+              ) : pipedriveStatus === "error" ? (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                  La connexion Pipedrive a échoué. Réessayez ; si le problème
+                  persiste, contactez le support.
+                </div>
+              ) : null}
+
+              <PipedriveConnection connected={hasPipedriveToken} canEdit={isOwner} />
             </CardContent>
           </Card>
         ) : null}

@@ -504,6 +504,51 @@ export async function disconnectHubspot(): Promise<UpdateOrgResult> {
 }
 
 // ============================================================================
+// disconnectPipedrive — déconnecte le CRM Pipedrive (J46)
+// ============================================================================
+// Bouton « Déconnecter » (carte Pipedrive). Efface les jetons + api_domain ET
+// remet crm_provider à 'hubspot' (l'org repasse sur l'adaptateur par défaut).
+// Owner only. On laisse le tunnel/critères en place (réutilisés à la reconnexion).
+export async function disconnectPipedrive(): Promise<UpdateOrgResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Session expirée. Reconnectez-vous." };
+
+  const admin = getAdminClient();
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("organization_id, role")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.organization_id) return { ok: false, error: "Profil introuvable." };
+  if (profile.role !== "owner") {
+    return { ok: false, error: "Seul le propriétaire peut déconnecter Pipedrive." };
+  }
+
+  const { error } = await admin
+    .from("organizations")
+    .update({
+      pipedrive_access_token: null,
+      pipedrive_refresh_token: null,
+      pipedrive_token_expires_at: null,
+      pipedrive_api_domain: null,
+      pipedrive_company_id: null,
+      crm_provider: "hubspot",
+    })
+    .eq("id", profile.organization_id);
+
+  if (error) {
+    return { ok: false, error: "Impossible de déconnecter Pipedrive." };
+  }
+
+  revalidatePath("/dashboard/settings/integrations");
+  return { ok: true, message: "Pipedrive déconnecté." };
+}
+
+// ============================================================================
 // disconnectGoogle — déconnecte le compte Google Meet (J42)
 // ============================================================================
 export async function disconnectGoogle(): Promise<UpdateOrgResult> {

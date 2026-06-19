@@ -46,13 +46,24 @@ export async function syncOrgPipelines(
   orgId: string,
   token: string | null,
 ): Promise<PipelineSyncResult> {
-  const empty: PipelineSyncResult = { ok: false, pipelineCount: 0, stageCount: 0 }
-  if (!orgId || !token) return empty
-
+  if (!orgId || !token) return { ok: false, pipelineCount: 0, stageCount: 0 }
   const pipelines = await getDealPipelines(token)
-  // Un portail a TOUJOURS au moins le pipeline « default ». 0 → lecture échouée :
-  // on n'écrase pas une carte déjà en base par du vide.
-  if (pipelines.length === 0) return empty
+  return persistOrgPipelines(orgId, pipelines)
+}
+
+/**
+ * Persiste un instantané de tunnel (pipelines + stages) déjà lu, dans la colonne
+ * jsonb `organizations.hubspot_pipelines` (+ horodatage). Provider-AGNOSTIQUE :
+ * la forme CrmPipeline est commune à tous les CRM (HubSpot, Pipedrive…), donc
+ * l'adaptateur Pipedrive (J46) réutilise cette même persistance. On n'écrase
+ * JAMAIS une carte existante par du vide (0 pipeline = lecture échouée).
+ */
+export async function persistOrgPipelines(
+  orgId: string,
+  pipelines: HubspotPipeline[],
+): Promise<PipelineSyncResult> {
+  const empty: PipelineSyncResult = { ok: false, pipelineCount: 0, stageCount: 0 }
+  if (!orgId || pipelines.length === 0) return empty
 
   const { error } = await admin()
     .from('organizations')

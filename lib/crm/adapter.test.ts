@@ -33,6 +33,19 @@ vi.mock('@/lib/hubspot-pipelines', () => ({
   getOrgPipelines: vi.fn(async () => ({ pipelines: [], syncedAt: null })),
   syncOrgPipelines: vi.fn(),
 }))
+// getCrmAdapter lit organizations.crm_provider (J46) → on mocke Supabase pour
+// renvoyer 'hubspot' (cas par défaut testé ici).
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: { crm_provider: 'hubspot' } }),
+        }),
+      }),
+    }),
+  }),
+}))
 
 import * as hs from '@/lib/hubspot'
 import { getHubspotToken } from '@/lib/hubspot-oauth'
