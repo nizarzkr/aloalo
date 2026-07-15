@@ -1,5 +1,4 @@
 {
-  "//": "Plan Vercel Hobby : crons quotidiens uniquement (1x/jour max). Fréquences réduites en conséquence — repasser en */5 et */15 le jour d'un upgrade Pro. Horaires décalés (UTC) pour ne pas empiler les deux jobs.",
   "crons": [
     { "path": "/api/cron/sweep-stuck-calls", "schedule": "0 3 * * *" },
     { "path": "/api/cron/poll-google-meet", "schedule": "0 4 * * *" }
