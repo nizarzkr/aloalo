@@ -1,7 +1,7 @@
 # Aloalo — Brief GTM (contexte produit pour stratégie go-to-market)
 
 > Document autoportant, à fournir comme contexte à une IA pour construire la stratégie GTM
-> et identifier les premiers clients / design partners. Rédigé le 9 juin 2026.
+> et identifier les premiers clients / design partners. Rédigé le 9 juin 2026, mis à jour le 20 juillet 2026.
 > Ton volontairement mesuré : orienté problème → bénéfice → feature, sans survente.
 
 ---
@@ -10,8 +10,10 @@
 
 Aloalo est un outil de **conversation intelligence** pour les PME et startups françaises (5 à 50 commerciaux).
 Il se branche sur la téléphonie (Ringover, Aircall) et les outils de réunion (Google Meet), transcrit et
-analyse les conversations commerciales via IA, et en restitue trois usages : un **assistant** pour le
-commercial, un **appui au coaching** pour le manager, et des **signaux objectifs** pour le pilotage du pipe.
+analyse les conversations commerciales via IA, puis renvoie tout dans le CRM déjà en place (HubSpot ou
+Pipedrive). Il en restitue trois usages, organisés en trois « actes » : **Analyser** (un assistant qui note
+l'appel à la place du commercial), **Piloter** (des signaux objectifs sur la santé du pipe) et **Coacher**
+(un appui factuel au manager).
 
 ## 2. Le problème
 
@@ -45,10 +47,13 @@ d'embaucher ces profils à temps plein.**
 ### Le commercial — gagner du temps et ne rien laisser tomber
 - **Problème** : prise de notes et CRM chronophages, next steps oubliés.
 - **Ce qu'Aloalo fait** : note de synthèse générée après l'appel ; tâches de suivi proposées avec une
-  échéance contextualisée (pas un rappel générique) ; points de suivi prêts à reprendre dans l'email que
-  le commercial enverra lui-même ; suggestion de prochaine étape.
-- **Bénéfice** : moins de temps administratif post-appel, et un suivi plus régulier des opportunités.
-- **Intégration** : notes et tâches poussées dans HubSpot, sur le bon contact / deal.
+  échéance contextualisée (pas un rappel générique), regroupées dans une file **« À faire »** cochable ;
+  points de suivi prêts à reprendre dans l'email que le commercial enverra lui-même ; suggestion de
+  prochaine étape.
+- **Bénéfice** : moins de temps administratif post-appel, aucune relance oubliée, et un suivi plus régulier
+  des opportunités — le tout sans une minute de saisie (c'est l'appel qui crée la note et la to-do).
+- **Intégration** : notes et tâches poussées automatiquement dans le CRM de l'équipe — **HubSpot ou
+  Pipedrive** — sur le bon contact / deal.
 
 ### Le manager — coacher sur des faits, pas sur le ressenti
 - **Problème** : peu de matière concrète pour préparer un 1:1 utile.
@@ -56,17 +61,26 @@ d'embaucher ces profils à temps plein.**
   étape), chaque dimension étant marquée validé / partiel / manqué **et justifiée par une citation de
   l'appel** ; métriques de dynamique calculées sans IA (temps de parole, alternance des tours de parole,
   plus long monologue, rapidité à passer au pitch) ; signaux comportementaux (questions ouvertes/fermées,
-  réaction au prix, gestion du silence après une objection) ; une **alerte** lorsqu'un deal montre des
-  signes de décrochage, accompagnée d'une piste d'action pour le 1:1.
-- **Bénéfice** : des 1:1 préparés en quelques minutes, ancrés sur des moments précis d'appels réels.
+  réaction au prix, gestion du silence après une objection). Deux briques dédiées au manager : un
+  **briefing « Préparer un 1:1 »** généré avant l'entretien (progrès, points récurrents, sur quoi insister,
+  au ton bienveillant) et un **profil de coaching** par commercial qui agrège ses tendances dans le temps.
+  Une **alerte** signale enfin les deals qui décrochent, avec une piste d'action prête à pousser en tâche.
+- **Bénéfice** : des 1:1 préparés en 2 minutes au lieu de 30, ancrés sur des moments précis d'appels réels
+  plutôt que sur une impression.
 
 ### Le responsable commercial / Rev Ops — objectiver le pilotage
 - **Problème** : qualification du pipe en partie subjective, difficile à vérifier à grande échelle.
 - **Ce qu'Aloalo fait** : repère côté prospect des **signaux** issus de la conversation (intentions
   d'achat exprimées, fermeté du prochain rendez-vous, nature des objections) pour appuyer la
   qualification ; suit le **momentum d'un deal** sur plusieurs appels (progression ou décrochage) avec les
-  raisons explicitées ; vue agrégée par deal (statut actif/dormant, tendance, alerte si décrochage).
-- **Bénéfice** : une lecture du pipe plus factuelle, sans avoir à réécouter les appels un par un.
+  raisons explicitées ; vue **Deals** agrégée (statut actif/dormant/gagné/perdu, tendance, tri par risque).
+  Trois briques de pilotage complètent l'ensemble : une **hygiène de pipeline** qui détecte les écarts
+  (deal bloqué sans raison, phase incohérente, next step manquant) et propose une correction en un clic ;
+  une **définition de la qualité par phase** (« exit-criteria » : ce qui doit être vrai pour changer de
+  phase — l'IA propose, l'owner valide) ; et une **couche de fiabilité du forecast** qui signale les deals
+  dont l'avancement déclaré n'est pas soutenu par ce qui s'est dit en appel.
+- **Bénéfice** : une lecture du pipe plus factuelle et un forecast plus honnête, sans avoir à réécouter les
+  appels un par un.
 
 ## 5. Partis pris produit (utiles à connaître pour le GTM)
 
@@ -74,8 +88,12 @@ d'embaucher ces profils à temps plein.**
   score global sur 100 a été volontairement retiré au profit d'évaluations par dimensions, plus lisibles.
 - **Analyses sourcées** : chaque évaluation IA s'appuie sur une citation de l'appel, pour rester
   vérifiable et inspirer confiance.
-- **Périmètre resserré** : pas de forecasting prédictif, pas de catalogue d'intégrations tous azimuts. On
-  couvre bien un périmètre précis plutôt que large.
+- **L'IA propose, l'humain valide** : sur les briques structurantes (exit-criteria, corrections de
+  pipeline), Aloalo suggère mais n'impose rien — l'owner garde la main.
+- **On fiabilise, on ne devine pas** : pas de forecast prédictif inventé de toutes pièces ; Aloalo se
+  contente de dire si le forecast déjà présent dans le CRM est soutenu par les appels réels.
+- **Périmètre resserré** : on couvre bien un périmètre précis (téléphonie/visio FR + 2 CRM courants)
+  plutôt qu'un catalogue d'intégrations tous azimuts.
 
 ## 6. Cible
 
@@ -98,25 +116,36 @@ richesse fonctionnelle pensées pour ce segment (Attention : 59 / 149 / 399 $ pa
 **Différenciation visée par Aloalo :**
 1. **Hébergement et traitement des données en Europe (RGPD)** — Supabase Paris, AssemblyAI EU, sans
    transit hors UE. Argument de réassurance fort pour les décideurs français sensibles à la conformité.
-2. **Téléphonie française au cœur du produit** (Ringover, Aircall), avec un branchement rapide pour une
-   équipe qui les utilise déjà.
-3. **Périmètre resserré et lisible**, adapté à une équipe sans Rev Ops, plutôt qu'une suite complète.
-4. **Tarif positionné pour la PME.**
-5. **Expérience française native** : interface, support, facturation en euros.
+2. **Téléphonie et visio françaises au cœur du produit** (Ringover, Aircall, Google Meet), avec un
+   branchement rapide pour une équipe qui les utilise déjà.
+3. **On s'insère dans les outils existants sans lock-in** : le CRM reste HubSpot ou Pipedrive (grâce à une
+   abstraction CRM interne qui rend l'ajout d'un 2ᵉ, 3ᵉ connecteur peu coûteux). Rien à changer dans les
+   habitudes de l'équipe.
+4. **Périmètre resserré et lisible**, adapté à une équipe sans Rev Ops, plutôt qu'une suite complète.
+5. **Tarif positionné pour la PME.**
+6. **Expérience française native** : interface, support, facturation en euros.
 
 **Ambition de départ réaliste** : sécuriser **20 à 30 PME françaises payantes** — un segment que les
 acteurs US financés ont peu d'intérêt à adresser.
 
-## 8. État du produit (juin 2026)
+## 8. État du produit (juillet 2026)
 
-- **MVP fonctionnel de bout en bout** : transcription → analyse IA (dimensions + signaux) → assistant
-  (note, tâches, next steps) → intégration HubSpot (cartes contact et deal, push automatique post-appel)
-  → pages de pilotage (Deals, momentum, alerte coaching).
+- **MVP fonctionnel de bout en bout**, organisé en trois actes :
+  - **Analyser** : transcription → analyse IA (dimensions sourcées + signaux comportementaux + métriques
+    déterministes) → assistant (note de synthèse, tâches dans la file « À faire », points de suivi).
+  - **Piloter** : pages Deals (tri par risque, statuts, momentum), hygiène de pipeline (détection d'écarts
+    + correction 1 clic), exit-criteria par phase, couche de fiabilité du forecast.
+  - **Coacher** : alerte de décrochage actionnable, briefing « Préparer un 1:1 », profil de coaching par
+    commercial.
+- **Sources d'entrée** : téléphonie (Ringover, Aircall) et visio (Google Meet), via une abstraction
+  « source d'enregistrement » commune.
+- **Intégrations CRM** : HubSpot et Pipedrive (via une abstraction CRM générique, connexion OAuth),
+  push automatique des notes et tâches post-appel + cartes contact/deal côté CRM.
 - **Stack** : Next.js 16, Supabase (Paris), AssemblyAI (EU), Claude Haiku, hébergé sur Vercel ;
   paiement Stripe en mode test.
-- **Encore à faire** : premier client payant ; validation de l'intégration Ringover sur les données réelles
-  d'un client (le pipeline est aujourd'hui testé via des simulations) ; finalisation facturation et cadre
-  juridique.
+- **Encore à faire** : premier client payant ; validation des intégrations téléphonie sur les données
+  réelles d'un client (le pipeline est aujourd'hui exercé via un simulateur multi-source) ; finalisation
+  facturation et cadre juridique.
 - **Équipe** : Nizar, fondateur solo, non technique, construit le produit en pilotant une IA de développement.
 
 ## 9. Objectif GTM

@@ -18,6 +18,13 @@ Conséquence sur tout ce qui suit :
 - Les piliers 2 à 5 (Closing → Expansion) sont **réels mais en sommeil** : on les
   réveille une fois les POC concluants. On ne fidélise pas des clients qu'on n'a pas.
 
+> **Ce qui est démontrable aujourd'hui (juillet 2026)** — le produit couvre les trois
+> actes de la démo : **Analyser** (l'appel se note seul → note, tâches « À faire »,
+> next steps), **Piloter** (vue Deals, momentum, hygiène de pipeline, exit-criteria,
+> fiabilité du forecast) et **Coacher** (alerte de décrochage, « Préparer un 1:1 »,
+> profil de coaching). Sources : Ringover, Aircall, Google Meet. CRM : HubSpot **et**
+> Pipedrive. Conducteur de démo : [[antiseche-demo|→ Antisèche démo]].
+
 ---
 
 ## 🗺️ Le tunnel de revenu (les 5 piliers)
@@ -94,7 +101,9 @@ En phase POC, concrètement : **Acquisition + Onboarding** sont les deux chantie
 (brancher Ringover → 1er appel transcrit → 1ère analyse → 1ère alerte coaching).
 
 **Chantiers**
-- Parcours d'activation fluide (c'est le chantier produit en cours : onboarding + CRM intelligence).
+- Parcours d'activation fluide : l'onboarding assisté IA et la connexion CRM (HubSpot/Pipedrive) sont
+  livrés → le chantier restant est surtout de **rôder ce parcours sur de vrais comptes** (branchement
+  téléphonie réelle vs simulateur).
 - Définition du **« client activé »** (ex. *téléphonie connectée ET 3 analyses consultées*).
 - Aide au démarrage : guide, vidéo 3 min, ou call de setup avec toi.
 
@@ -121,7 +130,8 @@ En phase POC, concrètement : **Acquisition + Onboarding** sont les deux chantie
 
 **Chantiers**
 - **Upsell** : +commerciaux → +sièges.
-- **Cross-sell** : nouveaux modules (pilotage, CRM intelligence).
+- **Cross-sell** : les modules Piloter (hygiène de pipeline, forecast) et Coacher (1:1, profil de coaching)
+  existent déjà → levier de montée en gamme une fois le socle Analyser adopté.
 - **Parrainage** : un client content en ramène un autre (acquisition la moins chère).
 
 **Métrique clé :** **Net Revenue Retention**.
