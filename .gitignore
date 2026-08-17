@@ -47,3 +47,6 @@ supabase/.temp/
 
 # hubspot CLI — contient la personal access key, JAMAIS à committer
 hubspot.config.yml
+
+# Notes de travail personnelles (hors dépôt)
+brainstorm-revops-sales-ops-as-a-service.md
