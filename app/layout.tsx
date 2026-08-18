@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Inter, Barlow_Condensed, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+
+import { SITE_URL } from "@/lib/site";
+
 import "./globals.css";
 
 // Direction artistique « Swiss editorial » (Refero). Trois voix, trois rôles :
@@ -24,6 +27,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  // Base absolue des métadonnées : sans elle, Next ne peut pas résoudre les
+  // URLs relatives (canonical, image de partage) et prévient au build.
+  metadataBase: new URL(SITE_URL),
   title: "Aloalo — L'IA qui écoute vos appels commerciaux",
   description:
     "Transcription, analyse et coaching automatique pour vos équipes commerciales. 100% RGPD, hébergé en France. Branchement Ringover & Aircall en 5 minutes.",
